@@ -4,7 +4,7 @@
 ##############################################################################
 
 
-TEMPLATE_DISPLAY_NAME = "PhotoShelter"  # must be same for uploader and conn. settings
+TEMPLATE_DISPLAY_NAME = "PhotoShelter2"  # must be same for uploader and conn. settings
 
 
 ##############################################################################
@@ -366,7 +366,7 @@ module PShelterLogonHelper
     end
 
     if @ps.nil?
-      @ps = PhotoShelter::Connection.new(@bridge, login, passwd)
+      @ps = PhotoShelter2::Connection.new(@bridge, login, passwd)
       @ps.auth_login
       @ps_login = login
     end
@@ -856,7 +856,7 @@ class PShelterAccountQueryWorker
   end
 
   def _open_ps(login, passwd)
-    @ps = PhotoShelter::Connection.new(@bridge, login, passwd)
+    @ps = PhotoShelter2::Connection.new(@bridge, login, passwd)
     @ps.auth_login
     @ps
   end
@@ -1364,7 +1364,7 @@ class PShelterUploadProtocol
   end
 end
 
-module PhotoShelter
+module PhotoShelter2
 
 class PhotoShelterError < RuntimeError; end
 class BadHTTPResponse < PhotoShelterError; end
@@ -1389,7 +1389,7 @@ class ServerCookie
   end
   
   def initialize(raw_cookie)
-#dbgprint "PhotoShelter::ServerCookie.initialize()"
+#dbgprint "PhotoShelter2::ServerCookie.initialize()"
     @raw = raw_cookie
     @cookies = ServerCookie.parse(raw_cookie)
   end
@@ -1405,7 +1405,7 @@ end
 class PSOrg
   attr_reader :oid, :name
   def initialize(doc)
-#dbgprint "PhotoShelter::PSOrg.initialize()"
+#dbgprint "PhotoShelter2::PSOrg.initialize()"
     # @doc = doc
     @oid = doc.get_elements("O_ID").map{|e| e.text}.join.strip
     @name = doc.get_elements("O_NAME").map{|e| e.text}.join.strip
@@ -1420,7 +1420,7 @@ end
 class PSPho
   attr_reader :uid, :first_name, :last_name
   def initialize(doc)
-#dbgprint "PhotoShelter::PSPho.initialize()"
+#dbgprint "PhotoShelter2::PSPho.initialize()"
     # @doc = doc
     @uid = doc.get_elements("U_ID").map{|e| e.text}.join.strip
     @first_name = doc.get_elements("U_FIRST_NAME").map{|e| e.text}.join.strip
@@ -1443,7 +1443,7 @@ class Connection
               :session_status, :session_first_name, :session_last_name
 
   def initialize(pm_api_bridge, user_email, passwd)
-#dbgprint "PhotoShelter::Connection.initialize()"
+#dbgprint "PhotoShelter2::Connection.initialize()"
     @bridge = pm_api_bridge
     @user_email, override_uri = user_email.split(/\|/,2)
     @passwd = passwd
@@ -1983,7 +1983,7 @@ end  # class Connection
 
 class ConnectionCache
   def initialize
-#dbgprint "PhotoShelter::ConnectionCache.initialize()"
+#dbgprint "PhotoShelter2::ConnectionCache.initialize()"
     @cache = {}
   end
   
@@ -2003,7 +2003,7 @@ class PSAlbumList
   ROOT_ITEM_ID = "**ROOT**"
 
   def initialize(xml_resp)
-#dbgprint "PhotoShelter::PSAlbumList.initialize()"
+#dbgprint "PhotoShelter2::PSAlbumList.initialize()"
     @albums = []
     @by_path_title = {}
     @by_album_id = {}
@@ -2114,5 +2114,5 @@ class PSAlbumList
 
 end
 
-end  # module PhotoShelter
+end  # module PhotoShelter2
 
