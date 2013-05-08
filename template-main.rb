@@ -17,7 +17,7 @@ class PShelterConnectionSettingsUI
   include CreateControlHelper
 
   def initialize(pm_api_bridge)
-#dbgprint "PShelterConnectionSettingsUI.initialize()"
+dbgprint "PShelterConnectionSettingsUI.initialize()"
     @bridge = pm_api_bridge
   end
 
@@ -158,7 +158,7 @@ class PShelterConnectionSettings
   end
 
   def initialize(pm_api_bridge)
-#dbgprint "PShelterConnectionSettings.initialize()"
+dbgprint "PShelterConnectionSettings.initialize()"
     @bridge = pm_api_bridge
     @prev_selected_settings_name = nil
     @settings = {}
@@ -396,7 +396,7 @@ class PShelterCreateArchiveDialog < Dlg::DynModalChildDialog
   include PShelterLogonHelper
 
   def initialize(api_bridge, spec, archive_list, dialog_end_callback)
-#dbgprint "PShelterCreateArchiveDialog.initialize()"
+dbgprint "PShelterCreateArchiveDialog.initialize()"
     @bridge = api_bridge
     @spec = spec
     @archive_list = archive_list
@@ -537,7 +537,7 @@ class PShelterFileUploaderUI
   DEST_EXISTS_SKIP_LABEL = "Skip file (do not upload)"
 
   def initialize(pm_api_bridge)
-#dbgprint "PShelterFileUploaderUI.initialize()"
+dbgprint "PShelterFileUploaderUI.initialize()"
     @bridge = pm_api_bridge
   end
 
@@ -679,7 +679,7 @@ class PShelterAccountQueryWorker
   #       these variables, but must own the mutex when writing them.
 
   def initialize(bridge)
-#dbgprint "PShelterAccountQueryWorker.initialize()"
+dbgprint "PShelterAccountQueryWorker.initialize()"
     @bridge = bridge
     @mutex = @bridge.create_mutex  # thread.rb Mutex can't be created in sandbox :(
     @cvar = ConditionVariable.new
@@ -932,7 +932,7 @@ class PShelterFileUploader
   end
 
   def initialize(pm_api_bridge, num_files, dlg_status_bridge, conn_settings_serializer)
-#dbgprint "PShelterFileUploader.initialize()"
+dbgprint "PShelterFileUploader.initialize()"
     @bridge = pm_api_bridge
     @num_files = num_files
     @dlg_status_bridge = dlg_status_bridge
@@ -1309,7 +1309,7 @@ class PShelterUploadProtocol
   include PShelterLogonHelper
 
   def initialize(pm_api_bridge)
-#dbgprint "PShelterUploadProtocol.initialize()"
+dbgprint "PShelterUploadProtocol.initialize()"
     @bridge = pm_api_bridge
     @ps = nil
     @ps_login = nil
@@ -1389,7 +1389,7 @@ class ServerCookie
   end
   
   def initialize(raw_cookie)
-#dbgprint "PhotoShelter2::ServerCookie.initialize()"
+dbgprint "PhotoShelter2::ServerCookie.initialize()"
     @raw = raw_cookie
     @cookies = ServerCookie.parse(raw_cookie)
   end
@@ -1405,7 +1405,7 @@ end
 class PSOrg
   attr_reader :oid, :name
   def initialize(doc)
-#dbgprint "PhotoShelter2::PSOrg.initialize()"
+dbgprint "PhotoShelter2::PSOrg.initialize()"
     # @doc = doc
     @oid = doc.get_elements("O_ID").map{|e| e.text}.join.strip
     @name = doc.get_elements("O_NAME").map{|e| e.text}.join.strip
@@ -1420,7 +1420,7 @@ end
 class PSPho
   attr_reader :uid, :first_name, :last_name
   def initialize(doc)
-#dbgprint "PhotoShelter2::PSPho.initialize()"
+dbgprint "PhotoShelter2::PSPho.initialize()"
     # @doc = doc
     @uid = doc.get_elements("U_ID").map{|e| e.text}.join.strip
     @first_name = doc.get_elements("U_FIRST_NAME").map{|e| e.text}.join.strip
@@ -1437,13 +1437,14 @@ end
 
 class Connection
 
-  BSAPI = "/bsapi/1.1/"
+  BSAPI = "/psapi/v2/"
+  APIKEY = "TimSchwartz"
 
   attr_reader :user_email, :auth_xml, :last_response_xml, :orgs,
               :session_status, :session_first_name, :session_last_name
 
   def initialize(pm_api_bridge, user_email, passwd)
-#dbgprint "PhotoShelter2::Connection.initialize()"
+    dbgprint "PhotoShelter2::Connection.initialize()"
     @bridge = pm_api_bridge
     @user_email, override_uri = user_email.split(/\|/,2)
     @passwd = passwd
@@ -1526,6 +1527,9 @@ class Connection
 
   # Authentication 
   # 
+  
+  #### Add comment. Switching to posting apikey/username/pw instead of a get request.
+  
   # Authentication allows the external application to sign in to a BitShelter 
   # application.  The external application will send a login and password 
   # across HTTPS: 
@@ -1550,10 +1554,18 @@ class Connection
   # 
   def auth_login
     begin
+      dbgprint "auth_login called"
       http = @http
-      path = BSAPI+"auth?U_EMAIL=#{CGI.escape(@user_email)}&U_PASSWORD=#{CGI.escape(@passwd)}"
-      headers = get_default_headers
-      resp = http.get(path, headers)
+      path = BSAPI+"mem/authenticate"
+           
+      parts = []
+      parts << key_value_to_multipart("email", @user_email)
+      parts << key_value_to_multipart("password", @passwd)
+      boundary = Digest::MD5.hexdigest(@user_email).to_s  # just hash the email itself
+      headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
+      body = combine_parts(parts, boundary)
+      resp = http.post(path, body, headers)
+      dbgprint resp.body
       handle_server_response(resp, resp.body)
       @auth_xml = @last_response_xml
     rescue Exception => ex
@@ -1563,6 +1575,7 @@ class Connection
     @orgs = parse_organizations(@auth_xml)
     true
   end
+  
 
   # The authentication module will logout the current session if called
   # without any parameters. This is recommended because PhotoShelter
@@ -1611,7 +1624,7 @@ class Connection
   end
 
   def create_album (parent_id, album_name)
-	#dbgprint "create_album: #{parent_id}, #{album_name}"
+	dbgprint "create_album: #{parent_id}, #{album_name}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
 
@@ -1664,7 +1677,7 @@ class Connection
       http = @http
       resp = http.get(path, headers)
       handle_server_response(resp, resp.body)
-#dbgprint "last-album-qry-response:"
+dbgprint "last-album-qry-response:"
 #@last_response_xml.write($stderr, 0)
       PSAlbumList.new(@last_response_xml)
     }
@@ -1853,7 +1866,7 @@ class Connection
     end
     
     unless uri
-      uri = URI.parse("https://ul.photoshelter.com:443")
+      uri = URI.parse("https://www.photoshelter.com:443")
     end
     
     uri
@@ -1864,10 +1877,11 @@ class Connection
     if @auth_client_cookie
       headers['Cookie'] = @auth_client_cookie
     end
-    if @connection_uri.user || @connection_uri.password
-      user, pass = @connection_uri.user.to_s, @connection_uri.password.to_s
-      headers['Authorization'] = 'Basic ' + encode64("#{user}:#{pass}").chop
-    end
+    # if @connection_uri.user || @connection_uri.password
+    #    user, pass = @connection_uri.user.to_s, @connection_uri.password.to_s
+    #    headers['Authorization'] = 'Basic ' + encode64("#{user}:#{pass}").chop
+    #  end
+    headers['X-PS-Api-Key'] = APIKEY
     headers.merge(additional_headers)
   end
 
@@ -1893,7 +1907,8 @@ class Connection
   end
 
   def handle_server_response(resp, data)
-    #dbgprint(data)
+    dbgprint(data)
+    dbgprint(resp)
     raise(BadHTTPResponse, resp.inspect) unless resp.code == "200"
     raise(BadAuthResponse, get_errmsg_for_resp(resp)) unless resp['content-type'] == "text/xml"
     accept_server_cookie(resp['set-cookie'])
@@ -1983,7 +1998,7 @@ end  # class Connection
 
 class ConnectionCache
   def initialize
-#dbgprint "PhotoShelter2::ConnectionCache.initialize()"
+dbgprint "PhotoShelter2::ConnectionCache.initialize()"
     @cache = {}
   end
   
@@ -2003,7 +2018,7 @@ class PSAlbumList
   ROOT_ITEM_ID = "**ROOT**"
 
   def initialize(xml_resp)
-#dbgprint "PhotoShelter2::PSAlbumList.initialize()"
+dbgprint "PhotoShelter2::PSAlbumList.initialize()"
     @albums = []
     @by_path_title = {}
     @by_album_id = {}
@@ -2016,7 +2031,7 @@ class PSAlbumList
 
       @albums.each { |alb|
         build_path_title(alb)
-#dbgprint "PSAlbumItem (#{alb.album_id}, #{alb.parent_id}, #{alb.title}, #{alb.path_title})"
+dbgprint "PSAlbumItem (#{alb.album_id}, #{alb.parent_id}, #{alb.title}, #{alb.path_title})"
         @by_path_title[alb.path_title] = alb
       }
     end
