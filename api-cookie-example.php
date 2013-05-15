@@ -3,6 +3,14 @@
 
 function postUrl($ch, $url, $post_data, $headers = array())
 {
+  
+  $ckfile = tempnam("/tmp/tim.cf", "CURLCOOKIE");
+  
+  echo $ckfile;
+  
+  curl_setopt($ch, CURLOPT_COOKIESESSION, TRUE);
+  curl_setopt($ch, CURLOPT_COOKIEJAR, $ckfile);
+  curl_setopt($ch, CURLOPT_COOKIEFILE, $ckfile);
   curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
   curl_setopt($ch, CURLOPT_POST, true);
   curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -23,16 +31,12 @@ $ch = curl_init();
 $data['api_key'] = 'TimSchwartz';
 $data['email'] = 'timatron@gmail.com';
 $data['password'] = 'abc123';
-$data['mode'] = 'token';
+$data['mode'] = 'cookie';
 $rv = postUrl($ch, "https://$host/psapi/v2/mem/authenticate", $data);
 print_r($rv);
-// //query collection
-// $data['api_key'] = 'TimSchwartz';
-// $headers = array(
-// 'X-PS-Auth-Token: ' . $token,
-// );
-// $rv = postUrl($ch, "https://$host/psapi/v2/mem/collection/query", $data, $headers);
-// print_r(json_decode($rv));
+print_r(curl_error($ch));
+print_r(curl_getinfo($ch));
+print_r(curl_errno($ch));
 
 curl_close($ch);
 

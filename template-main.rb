@@ -33,7 +33,7 @@ dbgprint "PShelterConnectionSettingsUI.initialize()"
     create_control(:login_static,           Static,       dlg, :label=>"PhotoShelter Account Login:")
     create_control(:password_static,        Static,       dlg, :label=>"Password:")
   end
-  
+
   def layout_controls(container)
     sh, eh = 20, 24
     c = container
@@ -97,7 +97,7 @@ class PShelterConnectionSettings
 
   class SettingsData
     attr_accessor :login, :password
-    
+
     def initialize(login, password)
       @login = login
       @password = password
@@ -332,7 +332,7 @@ dbgprint "PShelterConnectionSettings.initialize()"
     @prev_selected_settings_name = nil
     clear_settings
   end
-  
+
   def handle_delete_button
     cur_name = @ui.setting_name_combo.get_selected_item_text
     @ui.setting_name_combo.remove_item(cur_name) if @ui.setting_name_combo.has_item? cur_name
@@ -429,7 +429,7 @@ dbgprint "PShelterCreateArchiveDialog.initialize()"
     @create_button.on_click { on_create_archive }
     @cancel_button.on_click { closebox_clicked }
 
-    path_list = @archive_list.paths.sort_by{|o| o.downcase}
+    path_list = @archive_list.top_level_paths.sort_by{|o| o.downcase}
     path_list.unshift("**ROOT**")
     @parent_archive_combo.reset_content path_list
     if @parent_archive_combo.has_item? @spec.photoshelter_archive_path
@@ -474,7 +474,7 @@ dbgprint "PShelterCreateArchiveDialog.initialize()"
   end
 
   protected
-  
+
   def on_create_archive
     archive_name = @new_archive_edit.get_text.strip
     if archive_name.empty?
@@ -889,7 +889,9 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
   def _query_account_parameters
     archive_list = nil
     photog_list = []
+    dbgprint("@ps.can_album_query")
     if @ps.can_album_query?
+      dbgprint("Querying available archive folders...")
       set_status_msg("Querying available archive folders...")
       archive_list = @ps.album_query
     end
@@ -900,7 +902,7 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
     end
     [archive_list, photog_list]
   end
-  
+
 end
 
 
@@ -972,14 +974,14 @@ dbgprint "PShelterFileUploader.initialize()"
   def create_controls(parent_dlg)
     @ui = PShelterFileUploaderUI.new(@bridge)
     @ui.create_controls(parent_dlg)
-    
+
     @ui.create_archive_button.on_click {run_create_archive_dialog}
     @ui.send_original_radio.on_click {adjust_controls}
     @ui.send_jpeg_radio.on_click {adjust_controls}
 
     @ui.dest_account_combo.on_sel_change {account_parameters_changed}
     @ui.dest_org_combo.on_sel_change {account_parameters_changed}
-    
+
     add_jpeg_controls_event_hooks
     add_operations_controls_event_hooks
     add_renaming_controls_event_hooks
@@ -993,7 +995,7 @@ dbgprint "PShelterFileUploader.initialize()"
   def layout_controls(container)
     @ui.layout_controls(container)
   end
-  
+
   def destroy_controls
     @data_fetch_worker.close if @data_fetch_worker
     @data_fetch_worker = nil
@@ -1006,12 +1008,12 @@ dbgprint "PShelterFileUploader.initialize()"
     serializer.store(DLG_SETTINGS_KEY, :selected_group,   @ui.dest_archive_combo.get_selected_item)
     serializer.store(DLG_SETTINGS_KEY, :selected_org,     @ui.dest_org_combo.get_selected_item)
     serializer.store(DLG_SETTINGS_KEY, :selected_photog,  @ui.dest_photog_combo.get_selected_item)
-  end  
+  end
 
   def restore_state(serializer)
     data = fetch_conn_settings_data
     @ui.dest_account_combo.reset_content( data.keys )
-    
+
     prev_selected_account = serializer.fetch(DLG_SETTINGS_KEY, :selected_account)
     @ui.dest_account_combo.set_selected_item(prev_selected_account) if prev_selected_account
 
@@ -1061,12 +1063,12 @@ dbgprint "PShelterFileUploader.initialize()"
     if selected_settings_name
       @ui.dest_account_combo.set_selected_item( selected_settings_name )
     end
-  
+
     # if selection didn't take, and we have items in the list, just pick the 1st one
     if @ui.dest_account_combo.get_selected_item.empty?  &&  @ui.dest_account_combo.num_items > 0
       @ui.dest_account_combo.set_selected_item( @ui.dest_account_combo.get_item_at(0) )
     end
-  
+
     account_parameters_changed
     handle_background_data_fetch
   end
@@ -1143,10 +1145,10 @@ dbgprint "PShelterFileUploader.initialize()"
 
     ctl = @ui.dest_pubsearch_check
     ctl.enable( @data_fetch_worker && @data_fetch_worker.can_make_publicly_searchable?, :state_while_disabled => false )
-    
+
     ctl = @ui.dest_archive_combo
     ctl.enable( @archive_list )
-    
+
     ctl = @ui.create_archive_button
     ctl.enable( @archive_list )
   end
@@ -1183,7 +1185,7 @@ dbgprint "PShelterFileUploader.initialize()"
 
     # NOTE: upload_queue_key should be unique for a given protocol,
     #       and a given upload "account".
-    #       Rule of thumb: If file A requires a different 
+    #       Rule of thumb: If file A requires a different
     #       login than file B, they should have different
     #       queue keys.
     #       Thus here for photoshelter, we use login/password/org,
@@ -1266,12 +1268,14 @@ dbgprint "PShelterFileUploader.initialize()"
         @awaiting_account_result = true
       end
 
-# dbgprint "dfw.status: #{@data_fetch_worker.get_status_msg.inspect}"
       set_status_text( @data_fetch_worker.get_status_msg )
+      if @data_fetch_worker.get_status_msg.inspect != "Ready."
+        dbgprint "dfw.status: #{@data_fetch_worker.get_status_msg.inspect}"
+      end
 
       if @awaiting_account_result  &&  (@data_fetch_worker.result_ready? || @data_fetch_worker.error_state?)
         @awaiting_account_result = false
-        
+
         @archive_list = nil
 
         if @data_fetch_worker.error_state?
@@ -1282,7 +1286,7 @@ dbgprint "PShelterFileUploader.initialize()"
 
         path_list = ["**ERROR**"]
         if archive_list
-          path_list = archive_list.paths.sort_by{|o| o.downcase}
+          path_list = archive_list.top_level_paths.sort_by{|o| o.downcase}
           @archive_list = archive_list
         end
 
@@ -1330,7 +1334,7 @@ dbgprint "PShelterUploadProtocol.initialize()"
     replace_style = "UPLOAD_ANYWAY" if is_retry && replace_style == "SKIP_FILE"
 
     remote_filename = uppercase_file_ext(remote_filename)
-    
+
     final_remote_filename = @ps.image_upload(
       local_filepath, remote_filename,
       spec.photoshelter_archive, spec.photoshelter_photog,
@@ -1343,7 +1347,7 @@ dbgprint "PShelterUploadProtocol.initialize()"
   def reset_transfer_status
     @ps && @ps.reset_transfer_status
   end
-  
+
   # return [bytes_to_write, bytes_written]
   def poll_transfer_status
     if @ps
@@ -1387,13 +1391,13 @@ class ServerCookie
       cookies   # we could do further parsing, but Array#each + /regexp/ will get us through for now
     end
   end
-  
+
   def initialize(raw_cookie)
 dbgprint "PhotoShelter2::ServerCookie.initialize()"
     @raw = raw_cookie
     @cookies = ServerCookie.parse(raw_cookie)
   end
-  
+
   def each
     raise "need block" unless block_given?
     @cookies.each do |k|
@@ -1426,7 +1430,7 @@ dbgprint "PhotoShelter2::PSPho.initialize()"
     @first_name = doc.get_elements("U_FIRST_NAME").map{|e| e.text}.join.strip
     @last_name = doc.get_elements("U_LAST_NAME").map{|e| e.text}.join.strip
   end
-  
+
   def full_name
     n = []
     n << @first_name unless @first_name.empty?
@@ -1489,19 +1493,22 @@ class Connection
     n << @session_last_name unless @session_last_name.empty?
     n.join(" ")
   end
-  
+
   def active_org
     @orgs.find {|o| o.oid == @active_oid}
   end
 
   def single_user_access?
-    @session_status == "subscriber"
+    # TODO come up with a better way to figure this out
+    # this is a quick fix to make it work
+    # @session_status == "subscriber"
+    ! @auth_client_cookie.nil?
   end
-  
+
   def multi_user_access?
     @orgs.length > 0
   end
-  
+
   # def async_login
   #   if logged_in?
   #     @login_th = nil
@@ -1525,39 +1532,39 @@ class Connection
   # end
 
 
-  # Authentication 
-  # 
-  
+  # Authentication
+  #
+
   #### Add comment. Switching to posting apikey/username/pw instead of a get request.
-  
-  # Authentication allows the external application to sign in to a BitShelter 
-  # application.  The external application will send a login and password 
-  # across HTTPS: 
-  # 
-  # https://www.photoshelter.com/bsapi/1.0/auth?U_EMAIL=&U_PASSWORD= 
-  # 
-  # Note: The application does not reject non-encrypted communications.  It is 
-  # YOUR responsibility to communicate via HTTPS.  
-  # 
-  # On failure, the response will only be errors.  On success, a session 
-  # Cookie will be returned in both the XML and HTTP headers (Set-Cookie) that 
-  # will be used for all subsequent requests to other modules.  The HTTP 
-  # cookie(s) must be resent as is and the format is subject to change.  The 
-  # XML session information can be used by the external application for 
-  # display purposes.  
-  # 
-  # When a valid session cookie is used with other modules, a new session 
-  # cookie is returned in both the error and success response conditions.  The 
-  # new cookie has an updated expiration time used by the system to determine 
-  # an idle session.  By default, sessions time out after 2 hours of 
-  # inactivity.  
-  # 
+
+  # Authentication allows the external application to sign in to a BitShelter
+  # application.  The external application will send a login and password
+  # across HTTPS:
+  #
+  # https://www.photoshelter.com/bsapi/1.0/auth?U_EMAIL=&U_PASSWORD=
+  #
+  # Note: The application does not reject non-encrypted communications.  It is
+  # YOUR responsibility to communicate via HTTPS.
+  #
+  # On failure, the response will only be errors.  On success, a session
+  # Cookie will be returned in both the XML and HTTP headers (Set-Cookie) that
+  # will be used for all subsequent requests to other modules.  The HTTP
+  # cookie(s) must be resent as is and the format is subject to change.  The
+  # XML session information can be used by the external application for
+  # display purposes.
+  #
+  # When a valid session cookie is used with other modules, a new session
+  # cookie is returned in both the error and success response conditions.  The
+  # new cookie has an updated expiration time used by the system to determine
+  # an idle session.  By default, sessions time out after 2 hours of
+  # inactivity.
+  #
   def auth_login
     begin
       dbgprint "auth_login called"
       http = @http
       path = BSAPI+"mem/authenticate"
-           
+
       parts = []
       parts << key_value_to_multipart("email", @user_email)
       parts << key_value_to_multipart("password", @passwd)
@@ -1565,7 +1572,6 @@ class Connection
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       body = combine_parts(parts, boundary)
       resp = http.post(path, body, headers)
-      dbgprint resp.body
       handle_server_response(resp, resp.body)
       @auth_xml = @last_response_xml
     rescue Exception => ex
@@ -1575,12 +1581,13 @@ class Connection
     @orgs = parse_organizations(@auth_xml)
     true
   end
-  
+
 
   # The authentication module will logout the current session if called
   # without any parameters. This is recommended because PhotoShelter
-  # enforces a maximum number of concurrent sessions for any given user. 
+  # enforces a maximum number of concurrent sessions for any given user.
   #
+  #TODO: rewrite logout
   def auth_logout
     return unless logged_in?
     begin
@@ -1645,25 +1652,22 @@ class Connection
     }
   end
 
-  # Data Request 
-  # 
-  # A data request is one that an external application requests some 
-  # information from a BitShelter application.  Such requests include: all 
-  # album names for logged in user, gallery names that are public for logged 
-  # in user.  Data requests may result in an XML response or a more specific 
-  # Content-type (e.g.  download full sized image).  The format of which is 
-  # determined by the type of request.  
-  # 
-  # 
-  # <?xml version="1.0" encoding="ISO=8859-1"?>
-  # <BitShelterAPI version="1.0">
-  # <response>(see above)</response>
-  # <return> return contents </return>
-  # 
-  # </BitShelterAPI>
-  # 
+  # Data Request
+  #
+  # A data request is one that an external application requests some
+  # information from a BitShelter application.  Such requests include: all
+  # album names for logged in user, gallery names that are public for logged
+  # in user.  Data requests may result in an XML response or a more specific
+  # Content-type (e.g.  download full sized image).  The format of which is
+  # determined by the type of request.
+  #
+  #
+
+  # <?xml version="1.0"?>
+  # <PhotoShelterAPI version="1.0"><status>ok</status></PhotoShelterAPI>
+
   # Album Query and response contents:
-  # 
+  #
   # https://www.photoshelter.com/bsapi/1.0/alb-qry
   #
   # (<album><A_ID>id</A_ID><A_NAME>name</A_NAME>...</album>)*
@@ -1671,20 +1675,20 @@ class Connection
   def album_query
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-      raise(PhotoShelterError, "Album query access not available for this account or organization.") unless can_album_query?
-      path = BSAPI+"alb-qry"
+      raise(PhotoShelterError, "Collection query access not available for this account or organization.") unless can_album_query?
+      path = BSAPI+"mem/collection/root/children?format=xml"
       headers = get_default_headers
       http = @http
       resp = http.get(path, headers)
       handle_server_response(resp, resp.body)
 dbgprint "last-album-qry-response:"
 #@last_response_xml.write($stderr, 0)
-      PSAlbumList.new(@last_response_xml)
+      PSTree.new(@last_response_xml)
     }
   end
 
   def nil_album
-    PSAlbumList.new(nil)
+    PSTree.new(nil)
   end
 
   # Are we allowed to album_query in our current context?
@@ -1760,26 +1764,26 @@ dbgprint "last-album-qry-response:"
   # Functional Request
   #
   # Image Upload (using enctype=multipart/form-data):
-  # 
+  #
   # https://www.photoshelter.com/bsapi/1.0/img-upl?I_FILE[]=&I_F_PUB=
-  # 
+  #
   # Album Insert:
-  # 
+  #
   # https://www.photoshelter.com/bsapi/1.0/alb-ins?A_NAME=
-  # 
+  #
   # In the above two examples, the response will be XML.
-  # 
+  #
   #
 
   # Image Upload
-  #  
-  # The image upload module accepts an image upload.  If no album is specified 
-  # (ID or name) the image is placed in the Default album.  If an album ID or 
-  # album name is specified and it exists, the image is placed in that album.  
-  # If the specified album name does not exist, a new album is created with 
-  # that name and the image is placed in the new album.  This module must be 
-  # contacted using the HTTP multi-part form variable encoding type and 
-  # I_FILE[] must be a form array type 
+  #
+  # The image upload module accepts an image upload.  If no album is specified
+  # (ID or name) the image is placed in the Default album.  If an album ID or
+  # album name is specified and it exists, the image is placed in that album.
+  # If the specified album name does not exist, a new album is created with
+  # that name and the image is placed in the new album.  This module must be
+  # contacted using the HTTP multi-part form variable encoding type and
+  # I_FILE[] must be a form array type
   #
   # The img-upl module of the API accepts two parameters: I_IS_TAGGED and
   # I_ANGLE.  if I_IS_TAGGED=t it will tag the image upon upload.  the I_ANGLE
@@ -1805,13 +1809,13 @@ dbgprint "last-album-qry-response:"
 
       # binary_data = File.open(local_pathtofile, "rb") {|f| f.read}
       binary_data = @bridge.read_file_for_upload(local_pathtofile)
-      
+
       boundary = Digest::MD5.hexdigest(local_pathtofile).to_s  # just hash the filename itself
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       parts = []
       parts << binary_to_multipart("I_FILE[]", remote_filename, binary_data)
       if album_id.index("BY_NAME:") == 0
-		album_id = album_id.sub(/BY_NAME:/, "") 
+		album_id = album_id.sub(/BY_NAME:/, "")
         parts << key_value_to_multipart("A_NAME", album_id)
       else
         parts << key_value_to_multipart("A_ID", album_id)
@@ -1844,7 +1848,7 @@ dbgprint "last-album-qry-response:"
   def reset_transfer_status
     @http.reset_transfer_status
   end
-  
+
   def bytes_to_write
     @http.bytes_to_write
   end
@@ -1864,11 +1868,11 @@ dbgprint "last-album-qry-response:"
     if override_uri_str && !override_uri_str.to_s.strip.empty?
       uri = URI.parse(override_uri_str) rescue nil
     end
-    
+
     unless uri
       uri = URI.parse("https://www.photoshelter.com:443")
     end
-    
+
     uri
   end
 
@@ -1908,21 +1912,22 @@ dbgprint "last-album-qry-response:"
 
   def handle_server_response(resp, data)
     dbgprint(data)
-    dbgprint(resp)
     raise(BadHTTPResponse, resp.inspect) unless resp.code == "200"
     raise(BadAuthResponse, get_errmsg_for_resp(resp)) unless resp['content-type'] == "text/xml"
     accept_server_cookie(resp['set-cookie'])
     @last_response_xml = @bridge.xml_document_parse(data)
     raise_on_failure(@last_response_xml)
-    @session_status = @last_response_xml.get_elements("BitShelterAPI/session/U_STATUS").map {|e| e.text }.join
-    @session_first_name = @last_response_xml.get_elements("BitShelterAPI/session/U_FIRST_NAME").map {|e| e.text }.join
-    @session_last_name = @last_response_xml.get_elements("BitShelterAPI/session/U_LAST_NAME").map {|e| e.text }.join
-    oid = @last_response_xml.get_elements("BitShelterAPI/session/O_ID").map {|e| e.text }.join
-    @active_oid = oid.strip.empty? ? nil : oid
+    @session_status = @last_response_xml.get_elements("PhotoShelterAPI/status").map {|e| e.text }.join
+    # @session_first_name = @last_response_xml.get_elements("BitShelterAPI/session/U_FIRST_NAME").map {|e| e.text }.join
+    # @session_last_name = @last_response_xml.get_elements("BitShelterAPI/session/U_LAST_NAME").map {|e| e.text }.join
+    # oid = @last_response_xml.get_elements("BitShelterAPI/session/O_ID").map {|e| e.text }.join
+    # @active_oid = oid.strip.empty? ? nil : oid
   end
 
   def raise_on_failure(doc)
-    if doc.get_elements("BitShelterAPI/response/success").empty?
+    #TODO handle errors
+    status = doc.get_elements("PhotoShelterAPI/status").collect {|e| e.text}.join(" ")
+    if status != "ok"
       errclass = doc.get_elements("BitShelterAPI/response/error/class").collect {|e| e.text}.join(" ")
       errclass ||= "UnknownError"
       errmsg = doc.get_elements("BitShelterAPI/response/error/message").collect {|e| e.text}.join(" ")
@@ -1957,6 +1962,7 @@ dbgprint "last-album-qry-response:"
   end
 
   def accept_server_cookie(svk)
+    dbgprint svk
     if svk
       @auth_server_cookie_raw = svk
       @auth_client_cookie = gen_client_cookie(svk)
@@ -1981,14 +1987,15 @@ dbgprint "last-album-qry-response:"
   def key_value_to_multipart(key_name, value)
     %{Content-Disposition: form-data; name="#{key_name}"\r\n\r\n#{value}\r\n}
   end
-  
+
   def binary_to_multipart(key_name, remote_filename, binary_data)
     %{Content-Disposition: form-data; name="#{key_name}"; filename="#{remote_filename}"\r\n} +
     %{Content-Transfer-Encoding: binary\r\n} +
     %{Content-Type: image/jpeg\r\n\r\n} + binary_data + %{\r\n}
   end
 
-  def combine_parts(parts, boundary)  
+  def combine_parts(parts, boundary)
+    parts << key_value_to_multipart("format", "xml")
     separator = "--#{boundary}\r\n"
     data = separator + parts.join(separator) + "--#{boundary}--"
   end
@@ -2001,7 +2008,7 @@ class ConnectionCache
 dbgprint "PhotoShelter2::ConnectionCache.initialize()"
     @cache = {}
   end
-  
+
   def get(user_email, passwd)
     key = "#{user_email}\t#{passwd}"
     Thread.exclusive {
@@ -2010,82 +2017,214 @@ dbgprint "PhotoShelter2::ConnectionCache.initialize()"
   end
 end
 
-PSAlbumItem = Struct.new(:album_id, :parent_id, :title, :path_title)
+PSCollectionItem = Struct.new(:id, :parent_id, :name, :listed, :mode, :description)
+PSGalleryItem = Struct.new(:album_id, :parent_id, :title, :path_title)
 
-class PSAlbumList
+#class PSAlbumList
+#  include Enumerable
+#
+#  ROOT_ITEM_ID = "**ROOT**"
+#
+#  def initialize(xml_resp)
+#    dbgprint "PhotoShelter2::PSAlbumList.initialize()"
+#    if xml_resp
+#      root = xml_resp.get_elements("PhotoShelterAPI/data").first
+#      root or raise("bad server response - album root element missing")
+#      dbgprint(root.name)
+#      @children = get_node_children(root)
+#      @children.each { |item|
+#        dbgprint "PSCollectionItem (#{item.id}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
+#  #      @by_path_title[alb.path_title] = alb
+#      }
+#    end
+#  end
+#
+#  def count
+#    @nodes.length
+#  end
+#
+#  def album_id_for_path_title(title)
+#    alb = @by_path_title[title]
+#    album_id = alb ? alb.album_id : ""
+#  end
+#
+#  def find_by_path_title(title)
+#    @by_path_title[title]
+#  end
+#
+#  def values
+#    @nodes
+#  end
+#
+#  def each
+#    values.each {|alb| yield alb}
+#  end
+#
+#  def paths
+#    paths_array = []
+#    @nodes.each { |alb|
+#      paths_array << alb.path_title
+#    }
+#    paths_array
+#  end
+#
+#  private
+#
+#  #take a node, gather children and return
+#  def get_node_children(parent)
+#    @kids = []
+#    parent_id = parent.name == "data" ? "" : parent.id
+#    children = parent.get_elements("children")
+#    children.each do |child|
+#      ps = construct_node(child,parent_id)
+#      @kids << ps
+#    end
+#    @kids
+#  end
+#
+#  def construct_node(node,parent_id)
+#    type = get_child_text(node, "type")
+#    if type == "collection"
+#         dbgprint "parsing a collection"
+#         listed = get_child_text(node, "listed")
+#         collection = node.get_elements("collection").first
+#         mode = get_child_text(collection, "mode")
+#         id = get_child_text(collection, "id")
+#         name = get_child_text(collection, "name")
+#         description = get_child_text(collection, "description")
+#         ps = PSCollectionItem.new(id, name, listed, mode, description)
+#
+#    end
+##    album_id = get_child_text(node, "A_ID")
+##    title = get_child_text(node, "A_NAME")
+##    title = "unnamed" if title.strip.empty?
+##    parent_id = get_child_text(node, "A_PID")
+##    parent_id = ROOT_ITEM_ID if parent_id.strip.empty?
+##    ps = PSCollectionItem.new(album_id, parent_id, title, "")
+##    @by_album_id[album_id] = ps
+#    ps
+#  end
+#
+#  def get_child_text(node, child_name)
+#    child_node = node.get_elements(child_name).first
+#    txt = child_node ? child_node.text : ""
+#    txt = "" unless txt
+#    txt
+#  end
+#
+#  def get_parent(alb)
+#    @by_album_id[alb.parent_id]
+#  end
+#
+#  def get_parent_title(alb)
+#    return nil if alb.parent_id == ROOT_ITEM_ID
+#    get_parent(alb).title
+#  end
+#
+#  def build_path_title(alb)
+#    parent_title = ""
+#    title_so_far = alb.title
+#    cur_alb = alb
+#    while parent_title = get_parent_title(cur_alb)
+#      title_so_far = parent_title + ">" + title_so_far
+#      cur_alb = get_parent(cur_alb)
+#    end
+#    alb.path_title = ensure_unique_path(@unique_paths, title_so_far)
+#  end
+#
+#  def ensure_unique_path(uniq, orig_name)
+#    i = 2
+#    name = orig_name
+#    while uniq.has_key? name
+#      name = "#{orig_name} (#{i})"
+#      i += 1
+#    end
+#    uniq[name] = true
+#    name
+#  end
+#
+#end
+
+class PSTree
   include Enumerable
 
   ROOT_ITEM_ID = "**ROOT**"
+  @top_level_nodes = []
 
   def initialize(xml_resp)
-dbgprint "PhotoShelter2::PSAlbumList.initialize()"
-    @albums = []
-    @by_path_title = {}
-    @by_album_id = {}
-    @unique_paths = {}
+    dbgprint "PhotoShelter2::PSTree.initialize()"
     if xml_resp
-      root = xml_resp.get_elements("BitShelterAPI/return").first
+      root = xml_resp.get_elements("PhotoShelterAPI/data").first
       root or raise("bad server response - album root element missing")
-
-      parse_albums(root)
-
-      @albums.each { |alb|
-        build_path_title(alb)
-dbgprint "PSAlbumItem (#{alb.album_id}, #{alb.parent_id}, #{alb.title}, #{alb.path_title})"
-        @by_path_title[alb.path_title] = alb
+      @top_level_nodes = get_node_children(root, "root")
+      @top_level_nodes.each { |item|
+        dbgprint "PSCollectionItem (#{item.id}, #{item.parent_id}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
       }
     end
-    @by_album_id = nil      # no longer needed
-    @unique_paths = nil     # no longer needed
   end
 
-  def count
-    @albums.length
-  end
-
-  def album_id_for_path_title(title)
-    alb = @by_path_title[title]
-    album_id = alb ? alb.album_id : ""
-  end
-
-  def find_by_path_title(title)
-    @by_path_title[title]
-  end
-
-  def values
-    @albums
-  end
-
-  def each
-    values.each {|alb| yield alb}
-  end
-
-  def paths
+#  def count
+#    @nodes.length
+#  end
+#
+#  def album_id_for_path_title(title)
+#    alb = @by_path_title[title]
+#    album_id = alb ? alb.album_id : ""
+#  end
+#
+#  def find_by_path_title(title)
+#    @by_path_title[title]
+#  end
+#
+#  def values
+#    @nodes
+#  end
+#
+#  def each
+#    values.each {|alb| yield alb}
+#  end
+#
+  def top_level_paths
     paths_array = []
-    @albums.each { |alb|
-      paths_array << alb.path_title
+    @top_level_nodes.each { |node|
+      paths_array << node.name
     }
     paths_array
   end
 
   private
 
-  def parse_albums(parent_node)
-    children = parent_node.get_elements("alb")
-    children.each do |node|
-      ps = construct_album(node)
-      @albums << ps
+  #take a node, gather children and return
+  def get_node_children(parent,parent_id)
+    @kids = []
+    children = parent.get_elements("children")
+    children.each do |child|
+      ps = construct_node(child,parent_id)
+      @kids << ps
     end
+    @kids
   end
 
-  def construct_album(node)
-    album_id = get_child_text(node, "A_ID")
-    title = get_child_text(node, "A_NAME")
-    title = "unnamed" if title.strip.empty?
-    parent_id = get_child_text(node, "A_PID")
-    parent_id = ROOT_ITEM_ID if parent_id.strip.empty?
-    ps = PSAlbumItem.new(album_id, parent_id, title, "")
-    @by_album_id[album_id] = ps
+  def construct_node(node,parent_id)
+    type = get_child_text(node, "type")
+    if type == "collection"
+         dbgprint "parsing a collection"
+         listed = get_child_text(node, "listed")
+         collection = node.get_elements("collection").first
+         mode = get_child_text(collection, "mode")
+         id = get_child_text(collection, "id")
+         name = get_child_text(collection, "name")
+         description = get_child_text(collection, "description")
+         ps = PSCollectionItem.new(id, parent_id, name, listed, mode, description)
+
+    end
+#    album_id = get_child_text(node, "A_ID")
+#    title = get_child_text(node, "A_NAME")
+#    title = "unnamed" if title.strip.empty?
+#    parent_id = get_child_text(node, "A_PID")
+#    parent_id = ROOT_ITEM_ID if parent_id.strip.empty?
+#    ps = PSCollectionItem.new(album_id, parent_id, title, "")
+#    @by_album_id[album_id] = ps
     ps
   end
 
@@ -2095,37 +2234,37 @@ dbgprint "PSAlbumItem (#{alb.album_id}, #{alb.parent_id}, #{alb.title}, #{alb.pa
     txt = "" unless txt
     txt
   end
-
-  def get_parent(alb)
-    @by_album_id[alb.parent_id]
-  end
-
-  def get_parent_title(alb)
-    return nil if alb.parent_id == ROOT_ITEM_ID
-    get_parent(alb).title
-  end
-
-  def build_path_title(alb)
-    parent_title = ""
-    title_so_far = alb.title
-    cur_alb = alb
-    while parent_title = get_parent_title(cur_alb)
-      title_so_far = parent_title + ">" + title_so_far
-      cur_alb = get_parent(cur_alb)
-    end
-    alb.path_title = ensure_unique_path(@unique_paths, title_so_far)
-  end
-
-  def ensure_unique_path(uniq, orig_name)
-    i = 2
-    name = orig_name
-    while uniq.has_key? name
-      name = "#{orig_name} (#{i})"
-      i += 1
-    end
-    uniq[name] = true
-    name
-  end
+#
+#  def get_parent(alb)
+#    @by_album_id[alb.parent_id]
+#  end
+#
+#  def get_parent_title(alb)
+#    return nil if alb.parent_id == ROOT_ITEM_ID
+#    get_parent(alb).title
+#  end
+#
+#  def build_path_title(alb)
+#    parent_title = ""
+#    title_so_far = alb.title
+#    cur_alb = alb
+#    while parent_title = get_parent_title(cur_alb)
+#      title_so_far = parent_title + ">" + title_so_far
+#      cur_alb = get_parent(cur_alb)
+#    end
+#    alb.path_title = ensure_unique_path(@unique_paths, title_so_far)
+#  end
+#
+#  def ensure_unique_path(uniq, orig_name)
+#    i = 2
+#    name = orig_name
+#    while uniq.has_key? name
+#      name = "#{orig_name} (#{i})"
+#      i += 1
+#    end
+#    uniq[name] = true
+#    name
+#  end
 
 end
 
