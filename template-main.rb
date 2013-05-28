@@ -4,7 +4,7 @@
 ##############################################################################
 
 
-TEMPLATE_DISPLAY_NAME = "PhotoShelter2"  # must be same for uploader and conn. settings
+TEMPLATE_DISPLAY_NAME = "PhotoShelter"  # must be same for uploader and conn. settings
 
 
 ##############################################################################
@@ -295,17 +295,17 @@ dbgprint "PShelterConnectionSettings.initialize()"
   def save_or_rename_current_settings
     worth_saving = current_values_worth_saving?
     if @prev_selected_settings_name.nil?
-      # dbgprint "save_or_rename: prev was nil (saving if worth it)"
+        dbgprint "save_or_rename: prev was nil (saving if worth it)"
       if worth_saving
-        # dbgprint "save_or_rename: current worth saving"
+          dbgprint "save_or_rename: current worth saving"
         name = save_current_values_to_settings(:replace=>false)
         @ui.setting_name_combo.add_item(name) unless @ui.setting_name_combo.has_item? name
       end
     else
-      # dbgprint "save_or_rename: prev NOT nil (renaming)"
+        dbgprint "save_or_rename: prev NOT nil (renaming)"
       new_name = handle_rename_selected
       if worth_saving
-        # dbgprint "save_or_rename: current worth saving (after rename)"
+          dbgprint "save_or_rename: current worth saving (after rename)"
         save_current_values_to_settings(:name=>new_name, :replace=>true)
       end
     end
@@ -366,7 +366,7 @@ module PShelterLogonHelper
     end
 
     if @ps.nil?
-      @ps = PhotoShelter2::Connection.new(@bridge, login, passwd)
+      @ps = PhotoShelter::Connection.new(@bridge, login, passwd)
       @ps.auth_login
       @ps_login = login
     end
@@ -389,22 +389,23 @@ end
 ##############################################################################
 ## Uploader template
 
-class PShelterCreateArchiveDialog < Dlg::DynModalChildDialog
+
+class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
 
   include PM::Dlg
   include CreateControlHelper
   include PShelterLogonHelper
 
-  def initialize(api_bridge, spec, archive_list, dialog_end_callback)
-dbgprint "PShelterCreateArchiveDialog.initialize()"
+  def initialize(api_bridge, spec, collection_list, dialog_end_callback)
+dbgprint "PShelterCreateCollectionDialog.initialize()"
     @bridge = api_bridge
     @spec = spec
-    @archive_list = archive_list
+    @collection_list = collection_list
     @dialog_end_callback = dialog_end_callback
     @ps = nil
     @ps_login = nil
-    @created_new_archive = false
-    @new_archive_name = ""
+    @created_new_collection = false
+    @new_collection_name = ""
     super()
   end
 
@@ -412,40 +413,44 @@ dbgprint "PShelterCreateArchiveDialog.initialize()"
     # this will be called by c++ after DoModal()
     # calls InitDialog.
     dlg = self
-    dlg.set_window_position_key("PhotoShelterCreateArchiveDialogX")
+    dlg.set_window_position_key("PhotoShelterCreateCollectionDialogX")
     dlg.set_window_position(50, 100, 500, 200)
-    title = "Create New Archive"
+    title = "Create New Collection"
     dlg.set_window_title(title)
 
     parent_dlg = dlg
-    create_control(:descrip_gallery_static, Static,         parent_dlg, :label=>"Create new Archive:", :align=>"left")
-    create_control(:parent_archive_static,  Static,         parent_dlg, :label=>"Parent Archive:", :align=>"left")
-    create_control(:parent_archive_combo,   ComboBox,       parent_dlg, :sorted=>false, :persist=>false)
-    create_control(:new_archive_static,     Static,         parent_dlg, :label=>"New Archive name:", :align=>"left")
-    create_control(:new_archive_edit,       EditControl,    parent_dlg, :value=>"", :persist=>false)
-    create_control(:create_button,          Button,         parent_dlg, :label=>"Create", :default=>true)
-    create_control(:cancel_button,          Button,         parent_dlg, :label=>"Cancel")
+    create_control(:descrip_gallery_static,         Static,         parent_dlg, :label=>"Create new Collection:", :align=>"left")
+    create_control(:parent_collection_static,       Static,         parent_dlg, :label=>"Parent Collection:", :align=>"left")
+    create_control(:parent_collection_combo,        ComboBox,       parent_dlg, :sorted=>false, :persist=>false)
+    create_control(:new_collection_static,          Static,         parent_dlg, :label=>"New Collection name:", :align=>"left")
+    create_control(:new_collection_edit,            EditControl,    parent_dlg, :value=>"", :persist=>false)
+    create_control(:website_listed_check, CheckBox,       parent_dlg, :label=>"List New Collection On Website", :align=>"left")
+    create_control(:create_button,                  Button,         parent_dlg, :label=>"Create", :default=>true)
+    create_control(:cancel_button,                  Button,         parent_dlg, :label=>"Cancel")
 
-    @create_button.on_click { on_create_archive }
+    @create_button.on_click { on_create_collection }
     @cancel_button.on_click { closebox_clicked }
 
-    path_list = @archive_list.top_level_paths.sort_by{|o| o.downcase}
+    @parent_collection_combo.on_sel_change {update_website_listed_checkbox}
+
+    path_list = @collection_list.top_level_paths.sort_by{|o| o.downcase}
     path_list.unshift("**ROOT**")
-    @parent_archive_combo.reset_content path_list
-    if @parent_archive_combo.has_item? @spec.photoshelter_archive_path
-      @parent_archive_combo.set_selected_item( @spec.photoshelter_archive_path )
+    @parent_collection_combo.reset_content path_list
+    if @parent_collection_combo.has_item? @spec.photoshelter_collection_path
+      @parent_collection_combo.set_selected_item( @spec.photoshelter_collection_path )
     else
-      @new_archive_edit.set_text @spec.photoshelter_archive_path
+      @new_collection_edit.set_text @spec.photoshelter_collection_path
     end
 
     layout_controls
     instantiate_controls
+    update_website_listed_checkbox
     show(true)
   end
 
   def destroy_dialog!
     super
-    (@dialog_end_callback.call(@created_new_archive, @new_archive_name) if @dialog_end_callback) rescue nil
+    (@dialog_end_callback.call(@created_new_collection, @new_collection_name) if @dialog_end_callback) rescue nil
   end
 
   def layout_controls
@@ -454,19 +459,21 @@ dbgprint "PShelterCreateArchiveDialog.initialize()"
     bh = 28
     dlg = self
     client_width, client_height = dlg.get_clientrect_size
-    # dbgprint "PSCAD: clientrect: #{client_width}, #{client_height}"
+      dbgprint "PSCAD: clientrect: #{client_width}, #{client_height}"
     c = LayoutContainer.new(0, 0, client_width, client_height)
     c.inset(16, 10, -16, -10)
     c << @descrip_gallery_static.layout(0, c.base, -1, sh)
     c.pad_down(20).mark_base
 
     w1 = 250
-    c << @parent_archive_static.layout(0, c.base, w1, sh)
-      c << @new_archive_static.layout(c.prev_right + 20, c.base, -1, sh)
+    c << @parent_collection_static.layout(0, c.base, w1, sh)
+      c << @new_collection_static.layout(c.prev_right + 20, c.base, -1, sh)
     c.pad_down(0).mark_base
-    c << @parent_archive_combo.layout(0, c.base, w1, eh)
-      c << @new_archive_edit.layout(c.prev_right + 20, c.base, -1, eh)
+    c << @parent_collection_combo.layout(0, c.base, w1, eh)
+      c << @new_collection_edit.layout(c.prev_right + 20, c.base, -1, eh)
     c.pad_down(5).mark_base
+
+    c << @website_listed_check.layout(-200, c.base, w1, eh)
 
     bw = 80
     c << @cancel_button.layout(-(bw*2+10), -bh, bw, bh)
@@ -475,36 +482,74 @@ dbgprint "PShelterCreateArchiveDialog.initialize()"
 
   protected
 
-  def on_create_archive
-    archive_name = @new_archive_edit.get_text.strip
-    if archive_name.empty?
-      Dlg::MessageBox.ok("Please enter a non-blank archive name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+  def update_website_listed_checkbox
+    dbgprint(@parent_collection_combo.get_selected_item)
+
+    can_create_on_website = false
+    parent_collection_path = @parent_collection_combo.get_selected_item
+
+    if parent_collection_path != "**ROOT**"
+      parent_id = @collection_list.item_id_for_path_title( parent_collection_path )
+      unless parent_id.length > 0
+        Dlg::MessageBox.ok("Couldn't find Id for parent collection '{parent_collection_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+        return
+      end
+      dbgprint(parent_id)
+
+
+      can_create_on_website = @collection_list.is_item_listed(parent_id)
+    else
+      can_create_on_website = "t"
+    end
+
+    if can_create_on_website == "t"
+      @website_listed_check.enable( true )
+    else
+      @website_listed_check.enable( false )
+    end
+
+  end
+
+  def on_create_collection
+    collection_name = @new_collection_edit.get_text.strip
+    if collection_name.empty?
+      Dlg::MessageBox.ok("Please enter a non-blank collection name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
       return
     end
 
-    parent_archive_path = @parent_archive_combo.get_selected_item
-    if parent_archive_path != "**ROOT**"
-      parent_id = @archive_list.album_id_for_path_title( parent_archive_path )
+    parent_collection_path = @parent_collection_combo.get_selected_item
+    if parent_collection_path != "**ROOT**"
+      parent_id = @collection_list.item_id_for_path_title( parent_collection_path )
       unless parent_id.length > 0
-        Dlg::MessageBox.ok("Couldn't find Id for parent archive '{parent_archive_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+        Dlg::MessageBox.ok("Couldn't find Id for parent collection '{parent_collection_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
         return
       end
     else
-      parent_id = parent_archive_path # should be **ROOT**
+      parent_id = parent_collection_path # should be **ROOT**
     end
 
     begin
       ensure_open_ps(@spec)
       ensure_login(@spec)
 
-      @created_new_archive = @ps.create_album(parent_id, archive_name)
-      if parent_archive_path != "**ROOT**"
-        @new_archive_name = parent_archive_path + ">" + archive_name
+      #TODO udpate this to work with default value however james wants it
+      f_list = "f"
+      if @website_listed_check.checked?
+        f_list = "t"
       else
-        @new_archive_name = archive_name
+        f_list = "f"
       end
+
+      @created_new_collection = @ps.create_collection(parent_id, collection_name, f_list)
+
+      #TODO add something here to update the collection/gallery list afterwards
+#      if parent_collection_path != "**ROOT**"
+#        @new_collection_name = parent_collection_path + ">" + collection_name
+#      else
+#        @new_collection_name = collection_name
+#      end
     rescue StandardError => ex
-      Dlg::MessageBox.ok("Failed to create archive '#{archive_name}' at PhotoShelter.\nError: #{ex.message}", Dlg::MessageBox::MB_ICONEXCLAMATION)
+      Dlg::MessageBox.ok("Failed to create collection '#{collection_name}' at PhotoShelter.\nError: #{ex.message}", Dlg::MessageBox::MB_ICONEXCLAMATION)
     ensure
       @ps.auth_logout if @ps
       @ps = nil
@@ -514,6 +559,133 @@ dbgprint "PShelterCreateArchiveDialog.initialize()"
 
 end
 
+
+#
+#class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
+#
+#  include PM::Dlg
+#  include CreateControlHelper
+#  include PShelterLogonHelper
+#
+#  def initialize(api_bridge, spec, collection_list, dialog_end_callback)
+#dbgprint "PShelterCreateCollectionDialog.initialize()"
+#    @bridge = api_bridge
+#    @spec = spec
+#    @collection_list = collection_list
+#    @dialog_end_callback = dialog_end_callback
+#    @ps = nil
+#    @ps_login = nil
+#    @created_new_collection = false
+#    @new_collection_name = ""
+#    super()
+#  end
+#
+#  def init_dialog
+#    # this will be called by c++ after DoModal()
+#    # calls InitDialog.
+#    dlg = self
+#    dlg.set_window_position_key("PhotoShelterCreateCollectionDialogX")
+#    dlg.set_window_position(50, 100, 500, 200)
+#    title = "Create New Collection"
+#    dlg.set_window_title(title)
+#
+#    parent_dlg = dlg
+#    create_control(:descrip_gallery_static, Static,         parent_dlg, :label=>"Create new Collection:", :align=>"left")
+#    create_control(:parent_collection_static,  Static,         parent_dlg, :label=>"Parent Collection:", :align=>"left")
+#    create_control(:parent_collection_combo,   ComboBox,       parent_dlg, :sorted=>false, :persist=>false)
+#    create_control(:new_collection_static,     Static,         parent_dlg, :label=>"New Collection name:", :align=>"left")
+#    create_control(:new_collection_edit,       EditControl,    parent_dlg, :value=>"", :persist=>false)
+#    create_control(:create_button,          Button,         parent_dlg, :label=>"Create", :default=>true)
+#    create_control(:cancel_button,          Button,         parent_dlg, :label=>"Cancel")
+#
+#    @create_button.on_click { on_create_collection }
+#    @cancel_button.on_click { closebox_clicked }
+#
+#    path_list = @collection_list.top_level_paths.sort_by{|o| o.downcase}
+#    path_list.unshift("**ROOT**")
+#    @parent_collection_combo.reset_content path_list
+#    if @parent_collection_combo.has_item? @spec.photoshelter_collection_path
+#      @parent_collection_combo.set_selected_item( @spec.photoshelter_collection_path )
+#    else
+#      @new_collection_edit.set_text @spec.photoshelter_collection_path
+#    end
+#
+#    layout_controls
+#    instantiate_controls
+#    show(true)
+#  end
+#
+#  def destroy_dialog!
+#    super
+#    (@dialog_end_callback.call(@created_new_collection, @new_collection_name) if @dialog_end_callback) rescue nil
+#  end
+#
+#  def layout_controls
+#    sh = 20
+#    eh = 24
+#    bh = 28
+#    dlg = self
+#    client_width, client_height = dlg.get_clientrect_size
+#      dbgprint "PSCAD: clientrect: #{client_width}, #{client_height}"
+#    c = LayoutContainer.new(0, 0, client_width, client_height)
+#    c.inset(16, 10, -16, -10)
+#    c << @descrip_gallery_static.layout(0, c.base, -1, sh)
+#    c.pad_down(20).mark_base
+#
+#    w1 = 250
+#    c << @parent_collection_static.layout(0, c.base, w1, sh)
+#      c << @new_collection_static.layout(c.prev_right + 20, c.base, -1, sh)
+#    c.pad_down(0).mark_base
+#    c << @parent_collection_combo.layout(0, c.base, w1, eh)
+#      c << @new_collection_edit.layout(c.prev_right + 20, c.base, -1, eh)
+#    c.pad_down(5).mark_base
+#
+#    bw = 80
+#    c << @cancel_button.layout(-(bw*2+10), -bh, bw, bh)
+#      c << @create_button.layout(-bw, -bh, bw, bh)
+#  end
+#
+#  protected
+#
+#  def on_create_collection
+#    collection_name = @new_collection_edit.get_text.strip
+#    if collection_name.empty?
+#      Dlg::MessageBox.ok("Please enter a non-blank collection name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+#      return
+#    end
+#
+#    parent_collection_path = @parent_collection_combo.get_selected_item
+#    if parent_collection_path != "**ROOT**"
+#      parent_id = @collection_list.item_id_for_path_title( parent_collection_path )
+#      unless parent_id.length > 0
+#        Dlg::MessageBox.ok("Couldn't find Id for parent collection '{parent_collection_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+#        return
+#      end
+#    else
+#      parent_id = parent_collection_path # should be **ROOT**
+#    end
+#
+#    begin
+#      ensure_open_ps(@spec)
+#      ensure_login(@spec)
+#
+#      @created_new_collection = @ps.create_collection(parent_id, collection_name)
+#      if parent_collection_path != "**ROOT**"
+#        @new_collection_name = parent_collection_path + ">" + collection_name
+#      else
+#        @new_collection_name = collection_name
+#      end
+#    rescue StandardError => ex
+#      Dlg::MessageBox.ok("Failed to create collection '#{collection_name}' at PhotoShelter.\nError: #{ex.message}", Dlg::MessageBox::MB_ICONEXCLAMATION)
+#    ensure
+#      @ps.auth_logout if @ps
+#      @ps = nil
+#      end_dialog(IDOK)
+#    end
+#  end
+#
+#end
+#
 
 class PShelterFileUploaderUI
 
@@ -547,9 +719,10 @@ dbgprint "PShelterFileUploaderUI.initialize()"
     create_control(:dest_account_group_box,     GroupBox,       dlg, :label=>"Destination PhotoShelter Account:")
     create_control(:dest_account_static,        Static,         dlg, :label=>"Account:", :align=>"right")
     create_control(:dest_account_combo,         ComboBox,       dlg, :sorted=>true, :persist=>false)
-    create_control(:dest_archive_static,        Static,         dlg, :label=>"Archive Folder:", :align=>"right")
-    create_control(:dest_archive_combo,         ComboBox,       dlg, :sorted=>false, :editable=>true, :persist=>false)
-    create_control(:create_archive_button,      Button,         dlg, :label=>"New Archive Folder...")
+    create_control(:dest_collection_static,        Static,         dlg, :label=>"Collection Folder:", :align=>"right")
+    create_control(:dest_collection_combo,         ComboBox,       dlg, :sorted=>false, :editable=>true, :persist=>false)
+    create_control(:create_collection_button,      Button,         dlg, :label=>"New Collection...")
+
     create_control(:dest_org_static,            Static,         dlg, :label=>"Organization:", :align=>"right")
     create_control(:dest_org_combo,             ComboBox,       dlg, :sorted=>false, :persist=>false)
     create_control(:dest_photog_static,         Static,         dlg, :label=>"Photographer Uploading As:", :align=>"right")
@@ -606,9 +779,9 @@ dbgprint "PShelterFileUploaderUI.initialize()"
       end
       c.pad_down(0).mark_base
 
-      c << @dest_archive_static.layout(0, c.base+3, 120, sh)
-      c << @dest_archive_combo.layout(c.prev_right, c.base, "75%", eh)
-      c << @create_archive_button.layout(c.prev_right, c.base, 160, 24)
+      c << @dest_collection_static.layout(0, c.base+3, 120, sh)
+      c << @dest_collection_combo.layout(c.prev_right, c.base, "75%", eh)
+      c << @create_collection_button.layout(c.prev_right, c.base, 160, 24)
       c.pad_down(5).mark_base
       c << @dest_pubsearch_check.layout(0, c.base, 250, eh)
         c << @dest_file_exists_static.layout(c.prev_right, c.base+3, 200, sh)
@@ -672,7 +845,7 @@ class PShelterAccountQueryWorker
 
   # ASSUMPTIONS:
   #   - Only the background thread may write to @cur_account / @cur_org,
-  #     and @{orgs|archive|photog}_list.
+  #     and @{orgs|collection|photog}_list.
   #     - Any thread besides the background thread must own the mutex
   #       when reading these variables.
   #     - The background thread need not own the mutex while reading
@@ -686,7 +859,7 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
     @quit = false
     @want_account = nil
     @want_org = nil
-    @archive_list = nil
+    @collection_list = nil
     @status_msg = ""
     @error_state = false
     _forget_everything
@@ -711,15 +884,15 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
     @mutex.synchronize {
       @want_account = (login.nil?) ? nil : [login, passwd]
       @want_org = org
-      if @want_account != @cur_account  ||  @want_org != @cur_org  ||  @archive_list == nil
+      if @want_account != @cur_account  ||  @want_org != @cur_org  ||  @collection_list == nil
         @cvar.signal
       end
     }
   end
 
-  def clear_archive_list
+  def clear_collection_list
     @mutex.synchronize {
-      @archive_list = nil
+      @collection_list = nil
     }
   end
 
@@ -731,13 +904,13 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
 
   def result_ready?
     @mutex.synchronize {
-      _account_ready?  &&  _org_ready?  &&  @archive_list
+      _account_ready?  &&  _org_ready?  &&  @collection_list
     }
   end
 
   def result
     @mutex.synchronize {
-      [@orgs_list, @archive_list, @photog_list]
+      [@orgs_list, @collection_list, @photog_list]
     }
   end
 
@@ -749,7 +922,7 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
 
   def can_make_publicly_searchable?
     @mutex.synchronize {
-      _account_ready?  &&  _org_ready?  &&  @ps  &&  @ps.can_album_query?
+      _account_ready?  &&  _org_ready?  &&  @ps  &&  @ps.can_collection_query?
     }
   end
 
@@ -806,7 +979,7 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
           end
           @mutex.synchronize { @cur_account = login_account }  # meaning: account_ready
 
-        elsif @ps  &&  @ps.logged_in?  &&  (login_org != @cur_org || @archive_list == nil)
+        elsif @ps  &&  @ps.logged_in?  &&  (login_org != @cur_org || @collection_list == nil)
           orig_login_org = login_org
 
           # if we're told to try to login to a nonexistent org,
@@ -826,10 +999,10 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
             @ps.org_logout unless @ps.active_org.nil?
           end
 
-          archive_list, photog_list = _query_account_parameters
+          collection_list, photog_list = _query_account_parameters
 
           @mutex.synchronize {
-            @archive_list = archive_list
+            @collection_list = collection_list
             @photog_list = photog_list
             @cur_org = orig_login_org  # meaning: org_ready
           }
@@ -856,7 +1029,7 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
   end
 
   def _open_ps(login, passwd)
-    @ps = PhotoShelter2::Connection.new(@bridge, login, passwd)
+    @ps = PhotoShelter::Connection.new(@bridge, login, passwd)
     @ps.auth_login
     @ps
   end
@@ -882,25 +1055,25 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
 
   def _forget_org_related
     @cur_org = false  # use false instead of nil to force one pass thru org login case even for "no org"
-    @archive_list = []
+    @collection_list = []
     @photog_list = []
   end
 
   def _query_account_parameters
-    archive_list = nil
+    collection_list = nil
     photog_list = []
-    dbgprint("@ps.can_album_query")
-    if @ps.can_album_query?
-      dbgprint("Querying available archive folders...")
-      set_status_msg("Querying available archive folders...")
-      archive_list = @ps.album_query
+    dbgprint("@ps.can_collection_query")
+    if @ps.can_collection_query?
+      dbgprint("Querying available collection folders...")
+      set_status_msg("Querying available collection folders...")
+      collection_list = @ps.collection_query
     end
     if @ps.can_get_photog_list?
       set_status_msg("Querying available photographer upload names...")
       photog_list = @ps.get_photog_list.map{|o| o.full_name}.sort_by{|o| o.downcase}
       photog_list.unshift PHOTOG_LEAVE_BLANK
     end
-    [archive_list, photog_list]
+    [collection_list, photog_list]
   end
 
 end
@@ -942,13 +1115,13 @@ dbgprint "PShelterFileUploader.initialize()"
     @last_status_txt = nil
     @data_fetch_worker = nil
     @account_parameters_dirty = false
-    @archive_list = nil
+    @collection_list = nil
   end
 
   def upload_files(global_spec, progress_dialog)
-# dbgprint "in upload_files..."
+  dbgprint "in upload_files..."
     raise "upload_files called with no @ui instantiated" unless @ui
-# dbgprint "before build_upload_spec"
+  dbgprint "before build_upload_spec"
     acct = cur_account_settings
     raise "Failed to load settings for current account. Try Edit Connections..." unless acct
     spec = build_upload_spec(acct, @ui)
@@ -975,7 +1148,7 @@ dbgprint "PShelterFileUploader.initialize()"
     @ui = PShelterFileUploaderUI.new(@bridge)
     @ui.create_controls(parent_dlg)
 
-    @ui.create_archive_button.on_click {run_create_archive_dialog}
+    @ui.create_collection_button.on_click {run_create_collection_dialog}
     @ui.send_original_radio.on_click {adjust_controls}
     @ui.send_jpeg_radio.on_click {adjust_controls}
 
@@ -1005,7 +1178,7 @@ dbgprint "PShelterFileUploader.initialize()"
   def save_state(serializer)
     return unless @ui
     serializer.store(DLG_SETTINGS_KEY, :selected_account, @ui.dest_account_combo.get_selected_item)
-    serializer.store(DLG_SETTINGS_KEY, :selected_group,   @ui.dest_archive_combo.get_selected_item)
+    serializer.store(DLG_SETTINGS_KEY, :selected_group,   @ui.dest_collection_combo.get_selected_item)
     serializer.store(DLG_SETTINGS_KEY, :selected_org,     @ui.dest_org_combo.get_selected_item)
     serializer.store(DLG_SETTINGS_KEY, :selected_photog,  @ui.dest_photog_combo.get_selected_item)
   end
@@ -1027,11 +1200,11 @@ dbgprint "PShelterFileUploader.initialize()"
     # we just make the remembered selected item the only item in the
     # combo, and select it.  Later when the background data fetch completes,
     # it will update the combo and preserve the selection if possible.
-    prev_selected_archive = serializer.fetch(DLG_SETTINGS_KEY, :selected_group)
+    prev_selected_collection = serializer.fetch(DLG_SETTINGS_KEY, :selected_group)
     prev_selected_org = serializer.fetch(DLG_SETTINGS_KEY, :selected_org)
     prev_selected_photog = serializer.fetch(DLG_SETTINGS_KEY, :selected_photog)
 
-    update_combo(:dest_archive_combo, [prev_selected_archive]) unless prev_selected_archive.to_s.empty?
+    update_combo(:dest_collection_combo, [prev_selected_collection]) unless prev_selected_collection.to_s.empty?
     update_combo(:dest_org_combo, [prev_selected_org]) unless prev_selected_org.to_s.empty?
     update_combo(:dest_photog_combo, [prev_selected_photog]) unless prev_selected_photog.to_s.empty?
 
@@ -1083,13 +1256,13 @@ dbgprint "PShelterFileUploader.initialize()"
 
   protected
 
-  def run_create_archive_dialog
-    return unless @archive_list
+  def run_create_collection_dialog
+    return unless @collection_list
 
     # these sanity checks really shouldn't be necessary, as
     # the create button is in theory disabled if they are false
     if @account_parameters_dirty
-      Dlg::MessageBox.ok("Can't create archives, still awaiting required information from PhotoShelter.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+      Dlg::MessageBox.ok("Can't create collections, still awaiting required information from PhotoShelter.", Dlg::MessageBox::MB_ICONEXCLAMATION)
       return
     end
     acct = cur_account_settings
@@ -1097,26 +1270,26 @@ dbgprint "PShelterFileUploader.initialize()"
       Dlg::MessageBox.ok("Account settings appear missing or invalid. Please try Edit Connections...", Dlg::MessageBox::MB_ICONEXCLAMATION)
       return
     end
-    set_status_text "Ready to create archive."
+    set_status_text "Ready to create collection."
 
     spec = build_upload_spec(acct, @ui)
 
-    dialog_end_callback = lambda {|created_new_archive, new_archive_name| handle_new_archive_created(created_new_archive, new_archive_name)}
-    cdlg = PShelterCreateArchiveDialog.new(@bridge, spec, @archive_list, dialog_end_callback)
+    dialog_end_callback = lambda {|created_new_collection, new_collection_name| handle_new_collection_created(created_new_collection, new_collection_name)}
+    cdlg = PShelterCreateCollectionDialog.new(@bridge, spec, @collection_list, dialog_end_callback)
     cdlg.instantiate!
     cdlg.request_deferred_modal
   end
 
-  def handle_new_archive_created (created_new_archive, new_archive_name)
-    if created_new_archive
-      # just blow away the archives combobox contents with the
+  def handle_new_collection_created (created_new_collection, new_collection_name)
+    if created_new_collection
+      # just blow away the collections combobox contents with the
       # new name... we'll be forcing a reload, and the new selection
       # will be preserved when the data is reloaded
-      @ui.dest_archive_combo.reset_content( [new_archive_name] )
-      @ui.dest_archive_combo.set_selected_item(new_archive_name)
-      @data_fetch_worker.clear_archive_list
+      @ui.dest_collection_combo.reset_content( [new_collection_name] )
+      @ui.dest_collection_combo.set_selected_item(new_collection_name)
+      @data_fetch_worker.clear_collection_list
       account_parameters_changed
-      set_status_text "New archive created."
+      set_status_text "New collection created."
     else
       set_status_text "Ready."
     end
@@ -1146,11 +1319,11 @@ dbgprint "PShelterFileUploader.initialize()"
     ctl = @ui.dest_pubsearch_check
     ctl.enable( @data_fetch_worker && @data_fetch_worker.can_make_publicly_searchable?, :state_while_disabled => false )
 
-    ctl = @ui.dest_archive_combo
-    ctl.enable( @archive_list )
+    ctl = @ui.dest_collection_combo
+    ctl.enable( @collection_list )
 
-    ctl = @ui.create_archive_button
-    ctl.enable( @archive_list )
+    ctl = @ui.create_collection_button
+    ctl.enable( @collection_list )
   end
 
   def build_upload_spec(acct, ui)
@@ -1168,16 +1341,16 @@ dbgprint "PShelterFileUploader.initialize()"
     spec.photoshelter_login        = acct.login
     spec.photoshelter_password     = acct.password
 
-    photoshelter_archive = "BY_NAME:Default"
-    if @archive_list
-      if ui.dest_archive_combo.has_item? ui.dest_archive_combo.get_selected_item
-        photoshelter_archive = @archive_list.album_id_for_path_title(ui.dest_archive_combo.get_selected_item)
+    photoshelter_collection = "BY_NAME:Default"
+    if @collection_list
+      if ui.dest_collection_combo.has_item? ui.dest_collection_combo.get_selected_item
+        photoshelter_collection = @collection_list.item_id_for_path_title(ui.dest_collection_combo.get_selected_item)
       else
-        photoshelter_archive = "BY_NAME:" + ui.dest_archive_combo.get_selected_item
+        photoshelter_collection = "BY_NAME:" + ui.dest_collection_combo.get_selected_item
       end
     end
-    spec.photoshelter_archive      = photoshelter_archive
-    spec.photoshelter_archive_path = ui.dest_archive_combo.get_selected_item
+    spec.photoshelter_collection      = photoshelter_collection
+    spec.photoshelter_collection_path = ui.dest_collection_combo.get_selected_item
 
     org = ui.dest_org_combo.get_selected_item
     org = "" if org == PShelterAccountQueryWorker::SUBSCRIBER_ACCT_NAME
@@ -1190,8 +1363,8 @@ dbgprint "PShelterFileUploader.initialize()"
     #       queue keys.
     #       Thus here for photoshelter, we use login/password/org,
     #       because these affect how we login to transfer the file.
-    #       But we don't include the archive folder in the key,
-    #       because we can upload to different archive folders
+    #       But we don't include the collection folder in the key,
+    #       because we can upload to different collection folders
     #       on a given login.
     spec.upload_queue_key = [
       "photoshelter",
@@ -1269,36 +1442,36 @@ dbgprint "PShelterFileUploader.initialize()"
       end
 
       set_status_text( @data_fetch_worker.get_status_msg )
-      if @data_fetch_worker.get_status_msg.inspect != "Ready."
+      if @data_fetch_worker.get_status_msg != "Ready."
         dbgprint "dfw.status: #{@data_fetch_worker.get_status_msg.inspect}"
       end
 
       if @awaiting_account_result  &&  (@data_fetch_worker.result_ready? || @data_fetch_worker.error_state?)
         @awaiting_account_result = false
 
-        @archive_list = nil
+        @collection_list = nil
 
         if @data_fetch_worker.error_state?
-          org_list, archive_list, photog_list = [], nil, []
+          org_list, collection_list, photog_list = [], nil, []
         else
-          org_list, archive_list, photog_list = @data_fetch_worker.result
+          org_list, collection_list, photog_list = @data_fetch_worker.result
         end
 
         path_list = ["**ERROR**"]
-        if archive_list
-          path_list = archive_list.top_level_paths.sort_by{|o| o.downcase}
-          @archive_list = archive_list
+        if collection_list
+          path_list = collection_list.top_level_paths.sort_by{|o| o.downcase}
+          @collection_list = collection_list
         end
 
         update_combo(:dest_org_combo, org_list)
         update_combo(:dest_photog_combo, photog_list)
 
-        cur_archive_name = @ui.dest_archive_combo.get_selected_item
-        @ui.dest_archive_combo.reset_content( path_list )
-        @ui.dest_archive_combo.set_selected_item(cur_archive_name) unless cur_archive_name.empty?
+        cur_collection_name = @ui.dest_collection_combo.get_selected_item
+        @ui.dest_collection_combo.reset_content( path_list )
+        @ui.dest_collection_combo.set_selected_item(cur_collection_name) unless cur_collection_name.empty?
         # if no item was selected, just select the 1st one
-        if @ui.dest_archive_combo.get_selected_item.empty?  &&  @ui.dest_archive_combo.num_items > 0
-          @ui.dest_archive_combo.set_selected_item( @ui.dest_archive_combo.get_item_at(0) )
+        if @ui.dest_collection_combo.get_selected_item.empty?  &&  @ui.dest_collection_combo.num_items > 0
+          @ui.dest_collection_combo.set_selected_item( @ui.dest_collection_combo.get_item_at(0) )
         end
 
         adjust_controls
@@ -1323,6 +1496,8 @@ dbgprint "PShelterUploadProtocol.initialize()"
     # we'll need to examine the spec, and perform the
     # various login / org_login, etc.
 
+    dbgprint(spec.photoshelter_collection)
+
     ensure_open_ps(spec)
     ensure_login(spec)
 
@@ -1337,7 +1512,7 @@ dbgprint "PShelterUploadProtocol.initialize()"
 
     final_remote_filename = @ps.image_upload(
       local_filepath, remote_filename,
-      spec.photoshelter_archive, spec.photoshelter_photog,
+      spec.photoshelter_collection, spec.photoshelter_photog,
       rotation.to_i, rating.to_i, is_tagged,
       spec.make_publicly_searchable, replace_style)
     raise(FileSkippedException) if final_remote_filename == :skipped
@@ -1368,7 +1543,7 @@ dbgprint "PShelterUploadProtocol.initialize()"
   end
 end
 
-module PhotoShelter2
+module PhotoShelter
 
 class PhotoShelterError < RuntimeError; end
 class BadHTTPResponse < PhotoShelterError; end
@@ -1393,7 +1568,7 @@ class ServerCookie
   end
 
   def initialize(raw_cookie)
-dbgprint "PhotoShelter2::ServerCookie.initialize()"
+dbgprint "PhotoShelter::ServerCookie.initialize()"
     @raw = raw_cookie
     @cookies = ServerCookie.parse(raw_cookie)
   end
@@ -1409,7 +1584,7 @@ end
 class PSOrg
   attr_reader :oid, :name
   def initialize(doc)
-dbgprint "PhotoShelter2::PSOrg.initialize()"
+dbgprint "PhotoShelter::PSOrg.initialize()"
     # @doc = doc
     @oid = doc.get_elements("O_ID").map{|e| e.text}.join.strip
     @name = doc.get_elements("O_NAME").map{|e| e.text}.join.strip
@@ -1424,7 +1599,7 @@ end
 class PSPho
   attr_reader :uid, :first_name, :last_name
   def initialize(doc)
-dbgprint "PhotoShelter2::PSPho.initialize()"
+dbgprint "PhotoShelter::PSPho.initialize()"
     # @doc = doc
     @uid = doc.get_elements("U_ID").map{|e| e.text}.join.strip
     @first_name = doc.get_elements("U_FIRST_NAME").map{|e| e.text}.join.strip
@@ -1448,7 +1623,7 @@ class Connection
               :session_status, :session_first_name, :session_last_name
 
   def initialize(pm_api_bridge, user_email, passwd)
-    dbgprint "PhotoShelter2::Connection.initialize()"
+    dbgprint "PhotoShelter::Connection.initialize()"
     @bridge = pm_api_bridge
     @user_email, override_uri = user_email.split(/\|/,2)
     @passwd = passwd
@@ -1630,22 +1805,28 @@ class Connection
     }
   end
 
-  def create_album (parent_id, album_name)
-	dbgprint "create_album: #{parent_id}, #{album_name}"
+  def create_collection (parent_id, collection_name, f_list)
+	dbgprint "create_collection: #{parent_id}, #{collection_name}, #{f_list}",
     perform_with_session_expire_retry {
       auth_login unless logged_in?
 
-      boundary = Digest::MD5.hexdigest(album_name).to_s  # just hash the album_name itself
+      boundary = Digest::MD5.hexdigest(collection_name).to_s  # just hash the collection_name itself
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       parts = []
       if parent_id != "**ROOT**"
-        parts << key_value_to_multipart("A_PID", parent_id)
+        parts << key_value_to_multipart("parent", parent_id)
       end
-      parts << key_value_to_multipart("A_NAME", album_name)
+      if f_list == "t" || f_list == "f"
+        parts << key_value_to_multipart("f_list", f_list)
+      end
+      parts << key_value_to_multipart("name", collection_name)
       body = combine_parts(parts, boundary)
-      path = BSAPI+"alb-ins"
+      dbgprint(body)
+      path = BSAPI+"mem/collection/insert?format=xml"
+
       http = @http
       resp = http.post(path, body, headers)
+      dbgprint(resp.body)
       handle_server_response(resp, resp.body)
 #      @last_response_xml.write($stderr, 0)
       true
@@ -1656,7 +1837,7 @@ class Connection
   #
   # A data request is one that an external application requests some
   # information from a BitShelter application.  Such requests include: all
-  # album names for logged in user, gallery names that are public for logged
+  # collection names for logged in user, gallery names that are public for logged
   # in user.  Data requests may result in an XML response or a more specific
   # Content-type (e.g.  download full sized image).  The format of which is
   # determined by the type of request.
@@ -1670,32 +1851,32 @@ class Connection
   #
   # https://www.photoshelter.com/bsapi/1.0/alb-qry
   #
-  # (<album><A_ID>id</A_ID><A_NAME>name</A_NAME>...</album>)*
+  # (<collection><A_ID>id</A_ID><A_NAME>name</A_NAME>...</collection>)*
   #
-  def album_query
+  def collection_query
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-      raise(PhotoShelterError, "Collection query access not available for this account or organization.") unless can_album_query?
+      raise(PhotoShelterError, "Collection query access not available for this account or organization.") unless can_collection_query?
       path = BSAPI+"mem/collection/root/children?format=xml"
       headers = get_default_headers
       http = @http
       resp = http.get(path, headers)
       handle_server_response(resp, resp.body)
-dbgprint "last-album-qry-response:"
+dbgprint "last-collection-qry-response:"
 #@last_response_xml.write($stderr, 0)
       PSTree.new(@last_response_xml)
     }
   end
 
-  def nil_album
+  def nil_collection
     PSTree.new(nil)
   end
 
-  # Are we allowed to album_query in our current context?
+  # Are we allowed to collection_query in our current context?
   # (Answer depends on whether we're logged into an organization,
   # what our access is within that org, or whether we're logged
   # into a single user account, etc.)
-  def can_album_query?
+  def can_collection_query?
     org = active_org
     if org
       org.full_member?
@@ -1729,16 +1910,16 @@ dbgprint "last-album-qry-response:"
     ! active_org.nil?
   end
 
-  # Test whether <filename> exists within <album_id>.
+  # Test whether <filename> exists within <collection_id>.
   #
-  def image_exist?(album_id, filename)
-    album_id = "Default" if album_id.strip.empty?
+  def image_exist?(collection_id, filename)
+    collection_id = "Default" if collection_id.strip.empty?
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-      if album_id == "Default"
+      if collection_id == "Default"
         path = BSAPI+"img-qry?A_NAME=Default&I_FILE_NAME=#{CGI.escape(filename)}"
       else
-        path = BSAPI+"img-qry?A_ID=#{CGI.escape(album_id)}&I_FILE_NAME=#{CGI.escape(filename)}"
+        path = BSAPI+"img-qry?A_ID=#{CGI.escape(collection_id)}&I_FILE_NAME=#{CGI.escape(filename)}"
       end
       headers = get_default_headers
       http = @http
@@ -1747,18 +1928,18 @@ dbgprint "last-album-qry-response:"
 # @last_response_xml.write($stderr, 0)
       exists = false
       @last_response_xml.get_elements("BitShelterAPI/return/img").each {|e| exists = true}
-# dbgprint "image_exist('#{album_id}','#{filename}') = #{exists}"
+  dbgprint "image_exist('#{collection_id}','#{filename}') = #{exists}"
       exists
     }
   end
 
-  def find_unique_filename_on_server(album_id, filename)
+  def find_unique_filename_on_server(collection_id, filename)
     base, ext = filename.split(/\.(?=[^.]*\z)/)
     "A".upto("Z".succ) do |mod|
-      return filename unless image_exist?(album_id, filename)
+      return filename unless image_exist?(collection_id, filename)
       filename = "#{base}#{mod}.#{ext}"
     end
-    raise PhotoShelterError, "Failed all attempts to find unique name for file #{base}.#{ext} in album #{album_id}."
+    raise PhotoShelterError, "Failed all attempts to find unique name for file #{base}.#{ext} in collection #{collection_id}."
   end
 
   # Functional Request
@@ -1777,11 +1958,11 @@ dbgprint "last-album-qry-response:"
 
   # Image Upload
   #
-  # The image upload module accepts an image upload.  If no album is specified
-  # (ID or name) the image is placed in the Default album.  If an album ID or
-  # album name is specified and it exists, the image is placed in that album.
-  # If the specified album name does not exist, a new album is created with
-  # that name and the image is placed in the new album.  This module must be
+  # The image upload module accepts an image upload.  If no collection is specified
+  # (ID or name) the image is placed in the Default collection.  If an collection ID or
+  # collection name is specified and it exists, the image is placed in that collection.
+  # If the specified collection name does not exist, a new collection is created with
+  # that name and the image is placed in the new collection.  This module must be
   # contacted using the HTTP multi-part form variable encoding type and
   # I_FILE[] must be a form array type
   #
@@ -1795,53 +1976,53 @@ dbgprint "last-album-qry-response:"
   #   Else, returns final_remote_filename, whatever filename we used
   #     to upload after whatever collision renaming may have occurred.
 
-  def image_upload(local_pathtofile, remote_filename, album_id, photog_name, rotation, rating, is_tagged, publicly_searchable, replace_style)
+  def image_upload(local_pathtofile, remote_filename, gallery_id, photog_name, rotation, rating, is_tagged, publicly_searchable, replace_style)
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-      album_id = "BY_NAME:Default" if album_id.to_s.strip.empty?
-      photog_name = nil if photog_name.to_s.strip.empty?
-      rotation = rotation.to_i
-      if replace_style == "SKIP_FILE"
-        return :skipped if image_exist?(album_id, remote_filename)
-      elsif replace_style == "RENAME_BEFORE_UPLOADING"
-        remote_filename = find_unique_filename_on_server(album_id, remote_filename)
-      end
+#      photog_name = nil if photog_name.to_s.strip.empty?
+#      rotation = rotation.to_i
+#      if replace_style == "SKIP_FILE"
+#        return :skipped if image_exist?(gallery_id, remote_filename)
+#      elsif replace_style == "RENAME_BEFORE_UPLOADING"
+#        remote_filename = find_unique_filename_on_server(gallery_id, remote_filename)
+#      end
 
       # binary_data = File.open(local_pathtofile, "rb") {|f| f.read}
       binary_data = @bridge.read_file_for_upload(local_pathtofile)
-
       boundary = Digest::MD5.hexdigest(local_pathtofile).to_s  # just hash the filename itself
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       parts = []
-      parts << binary_to_multipart("I_FILE[]", remote_filename, binary_data)
-      if album_id.index("BY_NAME:") == 0
-		album_id = album_id.sub(/BY_NAME:/, "")
-        parts << key_value_to_multipart("A_NAME", album_id)
-      else
-        parts << key_value_to_multipart("A_ID", album_id)
-      end
-      if photog_name
-        photog_id = photog_name_to_id(photog_name)
-        if photog_id
-          parts << key_value_to_multipart("I_PHO_ID", photog_id)
-        end
-      end
-      if rotation != 0
-        parts << key_value_to_multipart("I_ANGLE", rotation)
-      end
-      parts << key_value_to_multipart("I_RATING", rating)
-      if is_tagged
-        parts << key_value_to_multipart("I_IS_TAGGED", "t")
-      end
+      parts << binary_to_multipart("file", remote_filename, binary_data)
+      parts << key_value_to_multipart("gallery_id", gallery_id)
+
+      #      if gallery_id.index("BY_NAME:") == 0
+#        gallery_id = gallery_id.sub(/BY_NAME:/, "")
+#        parts << key_value_to_multipart("A_NAME", gallery_id)
+#      else
+#        parts << key_value_to_multipart("A_ID", gallery_id)
+#      end
+#      if photog_name
+#        photog_id = photog_name_to_id(photog_name)
+#        if photog_id
+#          parts << key_value_to_multipart("I_PHO_ID", photog_id)
+#        end
+#      end
+#      if rotation != 0
+#        parts << key_value_to_multipart("I_ANGLE", rotation)
+#      end
+#      parts << key_value_to_multipart("I_RATING", rating)
+#      if is_tagged
+#        parts << key_value_to_multipart("I_IS_TAGGED", "t")
+#      end
       if publicly_searchable
-        parts << key_value_to_multipart("I_IS_SEARCHABLE", "t")
+        parts << key_value_to_multipart("f_searchable", "t")
       end
       body = combine_parts(parts, boundary)
-      path = BSAPI+"img-upl"
+      path = BSAPI+"mem/image/upload"
       http = @http
       resp = http.post(path, body, headers)
       handle_server_response(resp, resp.body)
-      File.join(album_id, remote_filename)
+      File.join(gallery_id, remote_filename)
     }
   end
 
@@ -1912,6 +2093,7 @@ dbgprint "last-album-qry-response:"
 
   def handle_server_response(resp, data)
     dbgprint(data)
+    dbgprint(resp['content-type'])
     raise(BadHTTPResponse, resp.inspect) unless resp.code == "200"
     raise(BadAuthResponse, get_errmsg_for_resp(resp)) unless resp['content-type'] == "text/xml"
     accept_server_cookie(resp['set-cookie'])
@@ -1985,7 +2167,8 @@ dbgprint "last-album-qry-response:"
   end
 
   def key_value_to_multipart(key_name, value)
-    %{Content-Disposition: form-data; name="#{key_name}"\r\n\r\n#{value}\r\n}
+     dbgprint(%{Content-Disposition: form-data; name="#{key_name}"\r\n\r\n#{value}\r\n})
+     %{Content-Disposition: form-data; name="#{key_name}"\r\n\r\n#{value}\r\n}
   end
 
   def binary_to_multipart(key_name, remote_filename, binary_data)
@@ -2005,7 +2188,7 @@ end  # class Connection
 
 class ConnectionCache
   def initialize
-dbgprint "PhotoShelter2::ConnectionCache.initialize()"
+dbgprint "PhotoShelter::ConnectionCache.initialize()"
     @cache = {}
   end
 
@@ -2017,8 +2200,7 @@ dbgprint "PhotoShelter2::ConnectionCache.initialize()"
   end
 end
 
-PSCollectionItem = Struct.new(:id, :parent_id, :name, :listed, :mode, :description)
-PSGalleryItem = Struct.new(:album_id, :parent_id, :title, :path_title)
+PSItem = Struct.new(:id, :parent_id, :type, :name, :listed, :mode, :description)
 
 #class PSAlbumList
 #  include Enumerable
@@ -2026,14 +2208,14 @@ PSGalleryItem = Struct.new(:album_id, :parent_id, :title, :path_title)
 #  ROOT_ITEM_ID = "**ROOT**"
 #
 #  def initialize(xml_resp)
-#    dbgprint "PhotoShelter2::PSAlbumList.initialize()"
+#    dbgprint "PhotoShelter::PSAlbumList.initialize()"
 #    if xml_resp
 #      root = xml_resp.get_elements("PhotoShelterAPI/data").first
-#      root or raise("bad server response - album root element missing")
+#      root or raise("bad server response - collection root element missing")
 #      dbgprint(root.name)
 #      @children = get_node_children(root)
 #      @children.each { |item|
-#        dbgprint "PSCollectionItem (#{item.id}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
+#        dbgprint "PSItem (#{item.id}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
 #  #      @by_path_title[alb.path_title] = alb
 #      }
 #    end
@@ -2043,9 +2225,9 @@ PSGalleryItem = Struct.new(:album_id, :parent_id, :title, :path_title)
 #    @nodes.length
 #  end
 #
-#  def album_id_for_path_title(title)
+#  def item_id_for_path_title(title)
 #    alb = @by_path_title[title]
-#    album_id = alb ? alb.album_id : ""
+#    collection_id = alb ? alb.collection_id : ""
 #  end
 #
 #  def find_by_path_title(title)
@@ -2092,16 +2274,16 @@ PSGalleryItem = Struct.new(:album_id, :parent_id, :title, :path_title)
 #         id = get_child_text(collection, "id")
 #         name = get_child_text(collection, "name")
 #         description = get_child_text(collection, "description")
-#         ps = PSCollectionItem.new(id, name, listed, mode, description)
+#         ps = PSItem.new(id, name, listed, mode, description)
 #
 #    end
-##    album_id = get_child_text(node, "A_ID")
+##    collection_id = get_child_text(node, "A_ID")
 ##    title = get_child_text(node, "A_NAME")
 ##    title = "unnamed" if title.strip.empty?
 ##    parent_id = get_child_text(node, "A_PID")
 ##    parent_id = ROOT_ITEM_ID if parent_id.strip.empty?
-##    ps = PSCollectionItem.new(album_id, parent_id, title, "")
-##    @by_album_id[album_id] = ps
+##    ps = PSItem.new(collection_id, parent_id, title, "")
+##    @by_collection_id[collection_id] = ps
 #    ps
 #  end
 #
@@ -2113,7 +2295,7 @@ PSGalleryItem = Struct.new(:album_id, :parent_id, :title, :path_title)
 #  end
 #
 #  def get_parent(alb)
-#    @by_album_id[alb.parent_id]
+#    @by_collection_id[alb.parent_id]
 #  end
 #
 #  def get_parent_title(alb)
@@ -2152,13 +2334,20 @@ class PSTree
   @top_level_nodes = []
 
   def initialize(xml_resp)
-    dbgprint "PhotoShelter2::PSTree.initialize()"
+    #temp
+    @nodes = []
+    @by_path_title = {}
+    @by_id = {}
+
+    dbgprint "PhotoShelter::PSTree.initialize()"
     if xml_resp
       root = xml_resp.get_elements("PhotoShelterAPI/data").first
-      root or raise("bad server response - album root element missing")
+      root or raise("bad server response - collection root element missing")
       @top_level_nodes = get_node_children(root, "root")
       @top_level_nodes.each { |item|
-        dbgprint "PSCollectionItem (#{item.id}, #{item.parent_id}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
+        dbgprint "PSItem (#{item.id}, #{item.parent_id}, #{item.type}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
+        @by_path_title[item.name] = item
+        @by_id[item.id] = item
       }
     end
   end
@@ -2167,10 +2356,15 @@ class PSTree
 #    @nodes.length
 #  end
 #
-#  def album_id_for_path_title(title)
-#    alb = @by_path_title[title]
-#    album_id = alb ? alb.album_id : ""
-#  end
+  def item_id_for_path_title(title)
+    item = @by_path_title[title]
+    item_id = item ? item.id : ""
+  end
+
+  def is_item_listed(item_id)
+    item = @by_id[item_id]
+    listed = item ? item.listed : false
+  end
 #
 #  def find_by_path_title(title)
 #    @by_path_title[title]
@@ -2202,29 +2396,35 @@ class PSTree
       ps = construct_node(child,parent_id)
       @kids << ps
     end
+    #temp
+    @nodes = @kids
     @kids
   end
 
   def construct_node(node,parent_id)
     type = get_child_text(node, "type")
     if type == "collection"
-         dbgprint "parsing a collection"
-         listed = get_child_text(node, "listed")
-         collection = node.get_elements("collection").first
-         mode = get_child_text(collection, "mode")
-         id = get_child_text(collection, "id")
-         name = get_child_text(collection, "name")
-         description = get_child_text(collection, "description")
-         ps = PSCollectionItem.new(id, parent_id, name, listed, mode, description)
-
+       dbgprint "parsing a collection"
+       listed = get_child_text(node, "listed")
+       collection = node.get_elements("collection").first
+       mode = get_child_text(collection, "mode")
+       id = get_child_text(collection, "id")
+       name = get_child_text(collection, "name")
+       description = get_child_text(collection, "description")
+       type = "collection"
+       ps = PSItem.new(id, parent_id, type, name, listed, mode, description)
     end
-#    album_id = get_child_text(node, "A_ID")
-#    title = get_child_text(node, "A_NAME")
-#    title = "unnamed" if title.strip.empty?
-#    parent_id = get_child_text(node, "A_PID")
-#    parent_id = ROOT_ITEM_ID if parent_id.strip.empty?
-#    ps = PSCollectionItem.new(album_id, parent_id, title, "")
-#    @by_album_id[album_id] = ps
+    if type == "gallery"
+       dbgprint "parsing a gallery"
+       listed = get_child_text(node, "listed")
+       gallery = node.get_elements("gallery").first
+       mode = get_child_text(gallery, "mode")
+       id = get_child_text(gallery, "id")
+       name = get_child_text(gallery, "name")
+       description = get_child_text(gallery, "description")
+       type = "gallery"
+       ps = PSItem.new(id, parent_id, type, name, listed, mode, description)
+    end
     ps
   end
 
@@ -2236,7 +2436,7 @@ class PSTree
   end
 #
 #  def get_parent(alb)
-#    @by_album_id[alb.parent_id]
+#    @by_collection_id[alb.parent_id]
 #  end
 #
 #  def get_parent_title(alb)
@@ -2268,5 +2468,5 @@ class PSTree
 
 end
 
-end  # module PhotoShelter2
+end  # module PhotoShelter
 
