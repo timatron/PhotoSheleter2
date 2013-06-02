@@ -396,6 +396,10 @@ class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
   include CreateControlHelper
   include PShelterLogonHelper
 
+  VISIBILITY_EVERYONE = "Everyone"
+  VISIBILITY_SOME = "Those with permission"
+  VISIBILITY_NONE = "No one but me"
+
   def initialize(api_bridge, spec, collection_list, dialog_end_callback)
 dbgprint "PShelterCreateCollectionDialog.initialize()"
     @bridge = api_bridge
@@ -413,8 +417,11 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
     # this will be called by c++ after DoModal()
     # calls InitDialog.
     dlg = self
-    dlg.set_window_position_key("PhotoShelterCreateCollectionDialogX")
-    dlg.set_window_position(50, 100, 500, 200)
+
+  #TODO add back the key below when the dialog layout is finally complete so it gets saved for the user
+
+    dlg.set_window_position_key("PhotoShelterCreateCollectionDialogZ")
+    dlg.set_window_position(50, 100, 500, 250)
     title = "Create New Collection"
     dlg.set_window_title(title)
 
@@ -424,16 +431,20 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
     create_control(:parent_collection_combo,        ComboBox,       parent_dlg, :sorted=>false, :persist=>false)
     create_control(:new_collection_static,          Static,         parent_dlg, :label=>"New Collection name:", :align=>"left")
     create_control(:new_collection_edit,            EditControl,    parent_dlg, :value=>"", :persist=>false)
-    create_control(:website_listed_check, CheckBox,       parent_dlg, :label=>"List New Collection On Website", :align=>"left")
+    create_control(:website_listed_check,           CheckBox,       parent_dlg, :label=>"List New Collection On Website", :align=>"left")
+    create_control(:inherit_check,                  CheckBox,       parent_dlg, :label=>"Inherit Visibility & Access Permissions", :align=>"left", :checked=>true)
+    create_control(:visibility_text,                Static,         parent_dlg, :label=>"Who can see this?", :align=>"left")
+    create_control(:visibility_options,             ComboBox,       parent_dlg, :items=>[VISIBILITY_EVERYONE,VISIBILITY_SOME,VISIBILITY_NONE], :selected=>VISIBILITY_EVERYONE, :sorted=>false, :persist=>true)
     create_control(:create_button,                  Button,         parent_dlg, :label=>"Create", :default=>true)
     create_control(:cancel_button,                  Button,         parent_dlg, :label=>"Cancel")
 
     @create_button.on_click { on_create_collection }
     @cancel_button.on_click { closebox_clicked }
 
-    @parent_collection_combo.on_sel_change {update_website_listed_checkbox}
+    @parent_collection_combo.on_sel_change {update_collection_creation_controls}
+    @inherit_check.on_click {toggle_permissions}
 
-    path_list = @collection_list.top_level_paths.sort_by{|o| o.downcase}
+    path_list = @collection_list.top_level_collections.sort_by{|o| o.downcase}
     path_list.unshift("**ROOT**")
     @parent_collection_combo.reset_content path_list
     if @parent_collection_combo.has_item? @spec.photoshelter_collection_path
@@ -444,7 +455,7 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
 
     layout_controls
     instantiate_controls
-    update_website_listed_checkbox
+    update_collection_creation_controls
     show(true)
   end
 
@@ -471,9 +482,16 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
     c.pad_down(0).mark_base
     c << @parent_collection_combo.layout(0, c.base, w1, eh)
       c << @new_collection_edit.layout(c.prev_right + 20, c.base, -1, eh)
-    c.pad_down(5).mark_base
 
-    c << @website_listed_check.layout(-200, c.base, w1, eh)
+    c.pad_down(12).mark_base
+    c << @website_listed_check.layout(0, c.base, 200, sh)
+
+    c.pad_down(9).mark_base
+    c << @inherit_check.layout(0, c.base, w1, sh)
+
+    c.pad_down(5).mark_base
+    c << @visibility_text.layout(0, c.base+3, 110, sh)
+      c << @visibility_options.layout(c.prev_right, c.base, 200, sh)
 
     bw = 80
     c << @cancel_button.layout(-(bw*2+10), -bh, bw, bh)
@@ -482,7 +500,7 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
 
   protected
 
-  def update_website_listed_checkbox
+  def update_collection_creation_controls
     dbgprint(@parent_collection_combo.get_selected_item)
 
     can_create_on_website = false
@@ -496,9 +514,29 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
       end
       dbgprint(parent_id)
 
+      parent_permission = @collection_list.get_item_permission(parent_id)
+      case parent_permission
+      when "everyone"
+        visibility = "everyone"
+      when "permission"
+        @visibility_options.set_selected_item(VISIBILITY_SOME)
+      when "private"
+        @visibility_options.set_selected_item(VISIBILITY_NONE)
+      else
+        @visibility_options.set_selected_item(VISIBILITY_EVERYONE)
+      end
+
+      @visibility_options.enable( false )
+      @inherit_check.set_check true
+      @inherit_check.enable( true )
 
       can_create_on_website = @collection_list.is_item_listed(parent_id)
     else
+      @visibility_options.set_selected_item(VISIBILITY_NONE)
+      @visibility_options.enable( true )
+      @inherit_check.set_check false
+      @inherit_check.enable( false )
+
       can_create_on_website = "t"
     end
 
@@ -508,9 +546,26 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
       @website_listed_check.enable( false )
     end
 
+    if @inherit_check.checked?
+      @visibility_options.enable( false )
+    else
+      @visibility_options.enable( true )
+    end
   end
 
+def toggle_permissions
+  if @inherit_check.checked?
+    @visibility_options.enable( false )
+  else
+    @visibility_options.enable( true )
+  end
+end
+
   def on_create_collection
+    inherit = "t"
+    visibility = "private"
+    f_list = "f"
+
     collection_name = @new_collection_edit.get_text.strip
     if collection_name.empty?
       Dlg::MessageBox.ok("Please enter a non-blank collection name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
@@ -524,23 +579,52 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
         Dlg::MessageBox.ok("Couldn't find Id for parent collection '{parent_collection_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
         return
       end
+
+      if @inherit_check.checked?
+        inherit = "t"
+      else
+        inherit = "f"
+        visibility = @visibility_options.get_selected_item
+      end
+
     else
       parent_id = parent_collection_path # should be **ROOT**
-    end
 
-    begin
-      ensure_open_ps(@spec)
-      ensure_login(@spec)
+      #if creating at the root level, use f_list to say if its on the public website or not
 
-      #TODO udpate this to work with default value however james wants it
-      f_list = "f"
       if @website_listed_check.checked?
         f_list = "t"
       else
         f_list = "f"
       end
 
-      @created_new_collection = @ps.create_collection(parent_id, collection_name, f_list)
+      inherit = "f"
+      visibility = @visibility_options.get_selected_item
+
+    end
+
+    begin
+      ensure_open_ps(@spec)
+      ensure_login(@spec)
+
+      case visibility
+      when VISIBILITY_EVERYONE
+        vis = "everyone"
+      when VISIBILITY_SOME
+        vis = "permission"
+      when VISIBILITY_NONE
+        vis = "private"
+      else
+        vis = "private"
+      end
+
+      @created_new_collection = @ps.create_collection(parent_id, collection_name, f_list, inherit, vis)
+
+      dbgprint(@created_new_collection)
+#      if parent_collection_path != "**ROOT**"
+#        if(@inherit_check.checked?)
+#          inherit = true
+#        end
 
       #TODO add something here to update the collection/gallery list afterwards
 #      if parent_collection_path != "**ROOT**"
@@ -601,7 +685,7 @@ end
 #    @create_button.on_click { on_create_collection }
 #    @cancel_button.on_click { closebox_clicked }
 #
-#    path_list = @collection_list.top_level_paths.sort_by{|o| o.downcase}
+#    path_list = @collection_list.top_level_collections.sort_by{|o| o.downcase}
 #    path_list.unshift("**ROOT**")
 #    @parent_collection_combo.reset_content path_list
 #    if @parent_collection_combo.has_item? @spec.photoshelter_collection_path
@@ -1459,7 +1543,7 @@ dbgprint "PShelterFileUploader.initialize()"
 
         path_list = ["**ERROR**"]
         if collection_list
-          path_list = collection_list.top_level_paths.sort_by{|o| o.downcase}
+          path_list = collection_list.top_level_collections.sort_by{|o| o.downcase}
           @collection_list = collection_list
         end
 
@@ -1805,8 +1889,8 @@ class Connection
     }
   end
 
-  def create_collection (parent_id, collection_name, f_list)
-	dbgprint "create_collection: #{parent_id}, #{collection_name}, #{f_list}",
+  def create_collection (parent_id, collection_name, f_list, inherit, visibility)
+    dbgprint "create_collection: #{parent_id}, #{collection_name}, #{f_list}, #{inherit}, #{visibility}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
 
@@ -1823,6 +1907,61 @@ class Connection
       body = combine_parts(parts, boundary)
       dbgprint(body)
       path = BSAPI+"mem/collection/insert?format=xml"
+
+      http = @http
+      resp = http.post(path, body, headers)
+      dbgprint(resp.body)
+      handle_server_response(resp, resp.body)
+      collection_id = @last_response_xml.get_elements("PhotoShelterAPI/data/id").map {|e| e.text }.join
+      #      @last_response_xml.write($stderr, 0)
+
+      if(inherit == "t")
+        update_collection_inherit(collection_id, parent_id, inherit)
+      else
+        update_collection_visibility(collection_id, visibility)
+      end
+      true
+    }
+  end
+
+
+  def update_collection_inherit (collection_id, parent_id, inherit)
+    dbgprint "update_collection_inherit: #{collection_id}, #{inherit}"
+    perform_with_session_expire_retry {
+      auth_login unless logged_in?
+
+      boundary = Digest::MD5.hexdigest(collection_id).to_s  # just hash the collection_name itself
+      headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
+      parts = []
+      parts << key_value_to_multipart("collection_id", parent_id)
+      parts << key_value_to_multipart("inherit", inherit)
+
+      body = combine_parts(parts, boundary)
+      dbgprint(body)
+      path = BSAPI+"mem/collection/" + collection_id + "/permission/inherit?format=xml"
+
+      http = @http
+      resp = http.post(path, body, headers)
+      dbgprint(resp.body)
+      handle_server_response(resp, resp.body)
+#      @last_response_xml.write($stderr, 0)
+      true
+    }
+  end
+
+  def update_collection_visibility (collection_id, visibility)
+    dbgprint "update_collection_visibility: #{collection_id}, #{visibility}"
+    perform_with_session_expire_retry {
+      auth_login unless logged_in?
+
+      boundary = Digest::MD5.hexdigest(collection_id).to_s  # just hash the collection_name itself
+      headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
+      parts = []
+      parts << key_value_to_multipart("mode", visibility)
+
+      body = combine_parts(parts, boundary)
+      dbgprint(body)
+      path = BSAPI+"mem/collection/" + collection_id + "/visibility/update?format=xml"
 
       http = @http
       resp = http.post(path, body, headers)
@@ -2332,6 +2471,7 @@ class PSTree
 
   ROOT_ITEM_ID = "**ROOT**"
   @top_level_nodes = []
+  @top_level_collections = []
 
   def initialize(xml_resp)
     #temp
@@ -2343,12 +2483,17 @@ class PSTree
     if xml_resp
       root = xml_resp.get_elements("PhotoShelterAPI/data").first
       root or raise("bad server response - collection root element missing")
+      collection_tmp_array = []
       @top_level_nodes = get_node_children(root, "root")
       @top_level_nodes.each { |item|
         dbgprint "PSItem (#{item.id}, #{item.parent_id}, #{item.type}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
         @by_path_title[item.name] = item
         @by_id[item.id] = item
+        if item.type == "collection"
+          collection_tmp_array << item
+        end
       }
+      @top_level_collections = collection_tmp_array
     end
   end
 
@@ -2365,6 +2510,11 @@ class PSTree
     item = @by_id[item_id]
     listed = item ? item.listed : false
   end
+
+  def get_item_permission(item_id)
+    item = @by_id[item_id]
+    permission = item ? item.mode : "everyone"
+  end
 #
 #  def find_by_path_title(title)
 #    @by_path_title[title]
@@ -2378,9 +2528,9 @@ class PSTree
 #    values.each {|alb| yield alb}
 #  end
 #
-  def top_level_paths
+  def top_level_collections
     paths_array = []
-    @top_level_nodes.each { |node|
+    @top_level_collections.each { |node|
       paths_array << node.name
     }
     paths_array
