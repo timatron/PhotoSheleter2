@@ -620,18 +620,8 @@ end
 
       @created_new_collection = @ps.create_collection(parent_id, collection_name, f_list, inherit, vis)
 
-      dbgprint(@created_new_collection)
-#      if parent_collection_path != "**ROOT**"
-#        if(@inherit_check.checked?)
-#          inherit = true
-#        end
+      @collection_list = @ps.collection_query
 
-      #TODO add something here to update the collection/gallery list afterwards
-#      if parent_collection_path != "**ROOT**"
-#        @new_collection_name = parent_collection_path + ">" + collection_name
-#      else
-#        @new_collection_name = collection_name
-#      end
     rescue StandardError => ex
       Dlg::MessageBox.ok("Failed to create collection '#{collection_name}' at PhotoShelter.\nError: #{ex.message}", Dlg::MessageBox::MB_ICONEXCLAMATION)
     ensure
@@ -643,133 +633,249 @@ end
 
 end
 
+class PShelterCreateGalleryDialog < Dlg::DynModalChildDialog
 
-#
-#class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
-#
-#  include PM::Dlg
-#  include CreateControlHelper
-#  include PShelterLogonHelper
-#
-#  def initialize(api_bridge, spec, collection_list, dialog_end_callback)
-#dbgprint "PShelterCreateCollectionDialog.initialize()"
-#    @bridge = api_bridge
-#    @spec = spec
-#    @collection_list = collection_list
-#    @dialog_end_callback = dialog_end_callback
-#    @ps = nil
-#    @ps_login = nil
-#    @created_new_collection = false
-#    @new_collection_name = ""
-#    super()
-#  end
-#
-#  def init_dialog
-#    # this will be called by c++ after DoModal()
-#    # calls InitDialog.
-#    dlg = self
-#    dlg.set_window_position_key("PhotoShelterCreateCollectionDialogX")
-#    dlg.set_window_position(50, 100, 500, 200)
-#    title = "Create New Collection"
-#    dlg.set_window_title(title)
-#
-#    parent_dlg = dlg
-#    create_control(:descrip_gallery_static, Static,         parent_dlg, :label=>"Create new Collection:", :align=>"left")
-#    create_control(:parent_collection_static,  Static,         parent_dlg, :label=>"Parent Collection:", :align=>"left")
-#    create_control(:parent_collection_combo,   ComboBox,       parent_dlg, :sorted=>false, :persist=>false)
-#    create_control(:new_collection_static,     Static,         parent_dlg, :label=>"New Collection name:", :align=>"left")
-#    create_control(:new_collection_edit,       EditControl,    parent_dlg, :value=>"", :persist=>false)
-#    create_control(:create_button,          Button,         parent_dlg, :label=>"Create", :default=>true)
-#    create_control(:cancel_button,          Button,         parent_dlg, :label=>"Cancel")
-#
-#    @create_button.on_click { on_create_collection }
-#    @cancel_button.on_click { closebox_clicked }
-#
-#    path_list = @collection_list.top_level_collections.sort_by{|o| o.downcase}
-#    path_list.unshift("**ROOT**")
-#    @parent_collection_combo.reset_content path_list
-#    if @parent_collection_combo.has_item? @spec.photoshelter_collection_path
-#      @parent_collection_combo.set_selected_item( @spec.photoshelter_collection_path )
-#    else
-#      @new_collection_edit.set_text @spec.photoshelter_collection_path
-#    end
-#
-#    layout_controls
-#    instantiate_controls
-#    show(true)
-#  end
-#
-#  def destroy_dialog!
-#    super
-#    (@dialog_end_callback.call(@created_new_collection, @new_collection_name) if @dialog_end_callback) rescue nil
-#  end
-#
-#  def layout_controls
-#    sh = 20
-#    eh = 24
-#    bh = 28
-#    dlg = self
-#    client_width, client_height = dlg.get_clientrect_size
-#      dbgprint "PSCAD: clientrect: #{client_width}, #{client_height}"
-#    c = LayoutContainer.new(0, 0, client_width, client_height)
-#    c.inset(16, 10, -16, -10)
-#    c << @descrip_gallery_static.layout(0, c.base, -1, sh)
-#    c.pad_down(20).mark_base
-#
-#    w1 = 250
-#    c << @parent_collection_static.layout(0, c.base, w1, sh)
-#      c << @new_collection_static.layout(c.prev_right + 20, c.base, -1, sh)
-#    c.pad_down(0).mark_base
-#    c << @parent_collection_combo.layout(0, c.base, w1, eh)
-#      c << @new_collection_edit.layout(c.prev_right + 20, c.base, -1, eh)
-#    c.pad_down(5).mark_base
-#
-#    bw = 80
-#    c << @cancel_button.layout(-(bw*2+10), -bh, bw, bh)
-#      c << @create_button.layout(-bw, -bh, bw, bh)
-#  end
-#
-#  protected
-#
-#  def on_create_collection
-#    collection_name = @new_collection_edit.get_text.strip
-#    if collection_name.empty?
-#      Dlg::MessageBox.ok("Please enter a non-blank collection name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
-#      return
-#    end
-#
-#    parent_collection_path = @parent_collection_combo.get_selected_item
-#    if parent_collection_path != "**ROOT**"
-#      parent_id = @collection_list.item_id_for_path_title( parent_collection_path )
-#      unless parent_id.length > 0
-#        Dlg::MessageBox.ok("Couldn't find Id for parent collection '{parent_collection_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
-#        return
-#      end
-#    else
-#      parent_id = parent_collection_path # should be **ROOT**
-#    end
-#
-#    begin
-#      ensure_open_ps(@spec)
-#      ensure_login(@spec)
-#
-#      @created_new_collection = @ps.create_collection(parent_id, collection_name)
-#      if parent_collection_path != "**ROOT**"
-#        @new_collection_name = parent_collection_path + ">" + collection_name
-#      else
-#        @new_collection_name = collection_name
-#      end
-#    rescue StandardError => ex
-#      Dlg::MessageBox.ok("Failed to create collection '#{collection_name}' at PhotoShelter.\nError: #{ex.message}", Dlg::MessageBox::MB_ICONEXCLAMATION)
-#    ensure
-#      @ps.auth_logout if @ps
-#      @ps = nil
-#      end_dialog(IDOK)
-#    end
-#  end
-#
-#end
-#
+  include PM::Dlg
+  include CreateControlHelper
+  include PShelterLogonHelper
+
+  VISIBILITY_EVERYONE = "Everyone"
+  VISIBILITY_SOME = "Those with permission"
+  VISIBILITY_NONE = "No one but me"
+
+  def initialize(api_bridge, spec, collection_list, dialog_end_callback)
+dbgprint "PShelterCreateGalleryDialog.initialize()"
+    @bridge = api_bridge
+    @spec = spec
+    @collection_list = collection_list
+    @dialog_end_callback = dialog_end_callback
+    @ps = nil
+    @ps_login = nil
+    @created_new_gallery = false
+    @new_gallery_name = ""
+    super()
+  end
+
+  def init_dialog
+    # this will be called by c++ after DoModal()
+    # calls InitDialog.
+    dlg = self
+
+  #TODO add back the key below when the dialog layout is finally complete so it gets saved for the user
+
+    dlg.set_window_position_key("PhotoShelterCreateGalleryDialogZ")
+    dlg.set_window_position(50, 100, 500, 250)
+    title = "Create New Gallery"
+    dlg.set_window_title(title)
+
+    parent_dlg = dlg
+    create_control(:descrip_gallery_static,         Static,         parent_dlg, :label=>"Create new Gallery:", :align=>"left")
+    create_control(:parent_gallery_static,       Static,         parent_dlg, :label=>"Parent Collection:", :align=>"left")
+    create_control(:parent_collection_combo,        ComboBox,       parent_dlg, :sorted=>false, :persist=>false)
+    create_control(:new_gallery_static,          Static,         parent_dlg, :label=>"New Gallery name:", :align=>"left")
+    create_control(:new_gallery_edit,            EditControl,    parent_dlg, :value=>"", :persist=>false)
+    create_control(:website_listed_check,           CheckBox,       parent_dlg, :label=>"List New Gallery On Website", :align=>"left")
+    create_control(:inherit_check,                  CheckBox,       parent_dlg, :label=>"Inherit Visibility & Access Permissions", :align=>"left", :checked=>true)
+    create_control(:visibility_text,                Static,         parent_dlg, :label=>"Who can see this?", :align=>"left")
+    create_control(:visibility_options,             ComboBox,       parent_dlg, :items=>[VISIBILITY_EVERYONE,VISIBILITY_SOME,VISIBILITY_NONE], :selected=>VISIBILITY_EVERYONE, :sorted=>false, :persist=>true)
+    create_control(:create_button,                  Button,         parent_dlg, :label=>"Create", :default=>true)
+    create_control(:cancel_button,                  Button,         parent_dlg, :label=>"Cancel")
+
+    @create_button.on_click { on_create_gallery }
+    @cancel_button.on_click { closebox_clicked }
+
+    @parent_collection_combo.on_sel_change {update_gallery_creation_controls}
+    @inherit_check.on_click {toggle_permissions}
+
+    path_list = @collection_list.top_level_collections.sort_by{|o| o.downcase}
+    path_list.unshift("**ROOT**")
+    @parent_collection_combo.reset_content path_list
+    if @parent_collection_combo.has_item? @spec.photoshelter_collection_path
+      @parent_collection_combo.set_selected_item( @spec.photoshelter_collection_path )
+    else
+      @new_gallery_edit.set_text @spec.photoshelter_collection_path
+    end
+
+    layout_controls
+    instantiate_controls
+    update_gallery_creation_controls
+    show(true)
+  end
+
+  def destroy_dialog!
+    super
+    (@dialog_end_callback.call(@created_new_gallery, @new_gallery_name) if @dialog_end_callback) rescue nil
+  end
+
+  def layout_controls
+    sh = 20
+    eh = 24
+    bh = 28
+    dlg = self
+    client_width, client_height = dlg.get_clientrect_size
+      dbgprint "PSCAD: clientrect: #{client_width}, #{client_height}"
+    c = LayoutContainer.new(0, 0, client_width, client_height)
+    c.inset(16, 10, -16, -10)
+    c << @descrip_gallery_static.layout(0, c.base, -1, sh)
+    c.pad_down(20).mark_base
+
+    w1 = 250
+    c << @parent_gallery_static.layout(0, c.base, w1, sh)
+      c << @new_gallery_static.layout(c.prev_right + 20, c.base, -1, sh)
+    c.pad_down(0).mark_base
+    c << @parent_collection_combo.layout(0, c.base, w1, eh)
+      c << @new_gallery_edit.layout(c.prev_right + 20, c.base, -1, eh)
+
+    c.pad_down(12).mark_base
+    c << @website_listed_check.layout(0, c.base, 200, sh)
+
+    c.pad_down(9).mark_base
+    c << @inherit_check.layout(0, c.base, w1, sh)
+
+    c.pad_down(5).mark_base
+    c << @visibility_text.layout(0, c.base+3, 110, sh)
+      c << @visibility_options.layout(c.prev_right, c.base, 200, sh)
+
+    bw = 80
+    c << @cancel_button.layout(-(bw*2+10), -bh, bw, bh)
+      c << @create_button.layout(-bw, -bh, bw, bh)
+  end
+
+  protected
+
+  def update_gallery_creation_controls
+    dbgprint(@parent_collection_combo.get_selected_item)
+
+    can_create_on_website = false
+    parent_collection_path = @parent_collection_combo.get_selected_item
+
+    if parent_collection_path != "**ROOT**"
+      parent_id = @collection_list.item_id_for_path_title( parent_collection_path )
+      unless parent_id.length > 0
+        Dlg::MessageBox.ok("Couldn't find Id for parent gallery '{parent_collection_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+        return
+      end
+      dbgprint(parent_id)
+
+      parent_permission = @collection_list.get_item_permission(parent_id)
+      case parent_permission
+      when "everyone"
+        visibility = "everyone"
+      when "permission"
+        @visibility_options.set_selected_item(VISIBILITY_SOME)
+      when "private"
+        @visibility_options.set_selected_item(VISIBILITY_NONE)
+      else
+        @visibility_options.set_selected_item(VISIBILITY_EVERYONE)
+      end
+
+      @visibility_options.enable( false )
+      @inherit_check.set_check true
+      @inherit_check.enable( true )
+
+      can_create_on_website = @collection_list.is_item_listed(parent_id)
+    else
+      @visibility_options.set_selected_item(VISIBILITY_NONE)
+      @visibility_options.enable( true )
+      @inherit_check.set_check false
+      @inherit_check.enable( false )
+
+      can_create_on_website = "t"
+    end
+
+    if can_create_on_website == "t"
+      @website_listed_check.enable( true )
+    else
+      @website_listed_check.enable( false )
+    end
+
+    if @inherit_check.checked?
+      @visibility_options.enable( false )
+    else
+      @visibility_options.enable( true )
+    end
+  end
+
+def toggle_permissions
+  if @inherit_check.checked?
+    @visibility_options.enable( false )
+  else
+    @visibility_options.enable( true )
+  end
+end
+
+  def on_create_gallery
+    inherit = "t"
+    visibility = "private"
+    f_list = "f"
+
+    gallery_name = @new_gallery_edit.get_text.strip
+    if gallery_name.empty?
+      Dlg::MessageBox.ok("Please enter a non-blank gallery name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+      return
+    end
+
+    parent_collection_path = @parent_collection_combo.get_selected_item
+    if parent_collection_path != "**ROOT**"
+      parent_id = @collection_list.item_id_for_path_title( parent_collection_path )
+      unless parent_id.length > 0
+        Dlg::MessageBox.ok("Couldn't find Id for parent collection '{parent_collection_path}'.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+        return
+      end
+
+      if @inherit_check.checked?
+        inherit = "t"
+      else
+        inherit = "f"
+        visibility = @visibility_options.get_selected_item
+      end
+
+    else
+      parent_id = parent_collection_path # should be **ROOT**
+
+      #if creating at the root level, use f_list to say if its on the public website or not
+
+      if @website_listed_check.checked?
+        f_list = "t"
+      else
+        f_list = "f"
+      end
+
+      inherit = "f"
+      visibility = @visibility_options.get_selected_item
+
+    end
+
+    begin
+      ensure_open_ps(@spec)
+      ensure_login(@spec)
+
+      case visibility
+      when VISIBILITY_EVERYONE
+        vis = "everyone"
+      when VISIBILITY_SOME
+        vis = "permission"
+      when VISIBILITY_NONE
+        vis = "private"
+      else
+        vis = "private"
+      end
+
+      @created_new_gallery = @ps.create_gallery(parent_id, gallery_name, f_list, inherit, vis)
+      @collection_list = @ps.collection_query
+
+    rescue StandardError => ex
+      Dlg::MessageBox.ok("Failed to create gallery '#{gallery_name}' at PhotoShelter.\nError: #{ex.message}", Dlg::MessageBox::MB_ICONEXCLAMATION)
+    ensure
+      @ps.auth_logout if @ps
+      @ps = nil
+      end_dialog(IDOK)
+    end
+  end
+
+end
+
+
 
 class PShelterFileUploaderUI
 
@@ -803,9 +909,10 @@ dbgprint "PShelterFileUploaderUI.initialize()"
     create_control(:dest_account_group_box,     GroupBox,       dlg, :label=>"Destination PhotoShelter Account:")
     create_control(:dest_account_static,        Static,         dlg, :label=>"Account:", :align=>"right")
     create_control(:dest_account_combo,         ComboBox,       dlg, :sorted=>true, :persist=>false)
-    create_control(:dest_collection_static,        Static,         dlg, :label=>"Collection Folder:", :align=>"right")
-    create_control(:dest_collection_combo,         ComboBox,       dlg, :sorted=>false, :editable=>true, :persist=>false)
-    create_control(:create_collection_button,      Button,         dlg, :label=>"New Collection...")
+    create_control(:dest_collection_static,     Static,         dlg, :label=>"Upload Gallery:", :align=>"right")
+    create_control(:dest_collection_combo,      ComboBox,       dlg, :sorted=>false, :editable=>true, :persist=>false)
+    create_control(:create_collection_button,   Button,         dlg, :label=>"New Collection...")
+    create_control(:create_gallery_button,      Button,         dlg, :label=>"New Gallery...")
 
     create_control(:dest_org_static,            Static,         dlg, :label=>"Organization:", :align=>"right")
     create_control(:dest_org_combo,             ComboBox,       dlg, :sorted=>false, :persist=>false)
@@ -864,8 +971,9 @@ dbgprint "PShelterFileUploaderUI.initialize()"
       c.pad_down(0).mark_base
 
       c << @dest_collection_static.layout(0, c.base+3, 120, sh)
-      c << @dest_collection_combo.layout(c.prev_right, c.base, "75%", eh)
+      c << @dest_collection_combo.layout(c.prev_right, c.base, "60%", eh)
       c << @create_collection_button.layout(c.prev_right, c.base, 160, 24)
+      c << @create_gallery_button.layout(c.prev_right, c.base, 160, 24)
       c.pad_down(5).mark_base
       c << @dest_pubsearch_check.layout(0, c.base, 250, eh)
         c << @dest_file_exists_static.layout(c.prev_right, c.base+3, 200, sh)
@@ -921,7 +1029,6 @@ dbgprint "PShelterFileUploaderUI.initialize()"
   end
 
 end
-
 
 class PShelterAccountQueryWorker
   SUBSCRIBER_ACCT_NAME = "- my subscriber account -"
@@ -1233,6 +1340,7 @@ dbgprint "PShelterFileUploader.initialize()"
     @ui.create_controls(parent_dlg)
 
     @ui.create_collection_button.on_click {run_create_collection_dialog}
+    @ui.create_gallery_button.on_click {run_create_gallery_dialog}
     @ui.send_original_radio.on_click {adjust_controls}
     @ui.send_jpeg_radio.on_click {adjust_controls}
 
@@ -1379,6 +1487,45 @@ dbgprint "PShelterFileUploader.initialize()"
     end
   end
 
+def run_create_gallery_dialog
+  return unless @collection_list
+
+  # these sanity checks really shouldn't be necessary, as
+  # the create button is in theory disabled if they are false
+  if @account_parameters_dirty
+    Dlg::MessageBox.ok("Can't create gallerys, still awaiting required information from PhotoShelter.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+    return
+  end
+  acct = cur_account_settings
+  unless acct && acct.appears_valid?
+    Dlg::MessageBox.ok("Account settings appear missing or invalid. Please try Edit Connections...", Dlg::MessageBox::MB_ICONEXCLAMATION)
+    return
+  end
+  set_status_text "Ready to create gallery."
+
+  spec = build_upload_spec(acct, @ui)
+
+  dialog_end_callback = lambda {|created_new_gallery, new_gallery_name| handle_new_gallery_created(created_new_gallery, new_gallery_name)}
+  cdlg = PShelterCreateGalleryDialog.new(@bridge, spec, @collection_list, dialog_end_callback)
+  cdlg.instantiate!
+  cdlg.request_deferred_modal
+end
+
+def handle_new_gallery_created (created_new_gallery, new_gallery_name)
+  if created_new_gallery
+    # just blow away the gallerys combobox contents with the
+    # new name... we'll be forcing a reload, and the new selection
+    # will be preserved when the data is reloaded
+    @ui.dest_gallery_combo.reset_content( [new_gallery_name] )
+    @ui.dest_gallery_combo.set_selected_item(new_gallery_name)
+    @data_fetch_worker.clear_collection_list
+    account_parameters_changed
+    set_status_text "New gallery created."
+  else
+    set_status_text "Ready."
+  end
+end
+
   def adjust_controls
     may_raw_plus_jpeg = @bridge.document_combines_raw_plus_jpeg?
     ctls = [
@@ -1407,6 +1554,9 @@ dbgprint "PShelterFileUploader.initialize()"
     ctl.enable( @collection_list )
 
     ctl = @ui.create_collection_button
+    ctl.enable( @collection_list )
+
+    ctl = @ui.create_gallery_button
     ctl.enable( @collection_list )
   end
 
@@ -1543,7 +1693,7 @@ dbgprint "PShelterFileUploader.initialize()"
 
         path_list = ["**ERROR**"]
         if collection_list
-          path_list = collection_list.top_level_collections.sort_by{|o| o.downcase}
+          path_list = collection_list.top_level_galleries.sort_by{|o| o.downcase}
           @collection_list = collection_list
         end
 
@@ -1893,7 +2043,6 @@ class Connection
     dbgprint "create_collection: #{parent_id}, #{collection_name}, #{f_list}, #{inherit}, #{visibility}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-
       boundary = Digest::MD5.hexdigest(collection_name).to_s  # just hash the collection_name itself
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       parts = []
@@ -1905,16 +2054,10 @@ class Connection
       end
       parts << key_value_to_multipart("name", collection_name)
       body = combine_parts(parts, boundary)
-      dbgprint(body)
       path = BSAPI+"mem/collection/insert?format=xml"
-
-      http = @http
-      resp = http.post(path, body, headers)
-      dbgprint(resp.body)
+      resp = @http.post(path, body, headers)
       handle_server_response(resp, resp.body)
       collection_id = @last_response_xml.get_elements("PhotoShelterAPI/data/id").map {|e| e.text }.join
-      #      @last_response_xml.write($stderr, 0)
-
       if(inherit == "t")
         update_collection_inherit(collection_id, parent_id, inherit)
       else
@@ -1924,27 +2067,19 @@ class Connection
     }
   end
 
-
   def update_collection_inherit (collection_id, parent_id, inherit)
     dbgprint "update_collection_inherit: #{collection_id}, #{inherit}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-
       boundary = Digest::MD5.hexdigest(collection_id).to_s  # just hash the collection_name itself
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       parts = []
       parts << key_value_to_multipart("collection_id", parent_id)
       parts << key_value_to_multipart("inherit", inherit)
-
       body = combine_parts(parts, boundary)
-      dbgprint(body)
       path = BSAPI+"mem/collection/" + collection_id + "/permission/inherit?format=xml"
-
-      http = @http
-      resp = http.post(path, body, headers)
-      dbgprint(resp.body)
+      resp = @http.post(path, body, headers)
       handle_server_response(resp, resp.body)
-#      @last_response_xml.write($stderr, 0)
       true
     }
   end
@@ -1953,21 +2088,75 @@ class Connection
     dbgprint "update_collection_visibility: #{collection_id}, #{visibility}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-
       boundary = Digest::MD5.hexdigest(collection_id).to_s  # just hash the collection_name itself
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       parts = []
       parts << key_value_to_multipart("mode", visibility)
-
       body = combine_parts(parts, boundary)
-      dbgprint(body)
       path = BSAPI+"mem/collection/" + collection_id + "/visibility/update?format=xml"
-
-      http = @http
-      resp = http.post(path, body, headers)
-      dbgprint(resp.body)
+      resp = @http.post(path, body, headers)
       handle_server_response(resp, resp.body)
-#      @last_response_xml.write($stderr, 0)
+      true
+    }
+  end
+
+  def create_gallery (parent_id, gallery_name, f_list, inherit, visibility)
+    dbgprint "create_gallery: #{parent_id}, #{gallery_name}, #{f_list}, #{inherit}, #{visibility}"
+    perform_with_session_expire_retry {
+      auth_login unless logged_in?
+      boundary = Digest::MD5.hexdigest(gallery_name).to_s  # just hash the gallery_name itself
+      headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
+      parts = []
+      if parent_id != "**ROOT**"
+        parts << key_value_to_multipart("parent", parent_id)
+      end
+      if f_list == "t" || f_list == "f"
+        parts << key_value_to_multipart("f_list", f_list)
+      end
+      parts << key_value_to_multipart("name", gallery_name)
+      body = combine_parts(parts, boundary)
+      path = BSAPI+"mem/gallery/insert?format=xml"
+      resp = @http.post(path, body, headers)
+      handle_server_response(resp, resp.body)
+      gallery_id = @last_response_xml.get_elements("PhotoShelterAPI/data/id").map {|e| e.text }.join
+      if(inherit == "t")
+        update_gallery_inherit(gallery_id, parent_id, inherit)
+      else
+        update_gallery_visibility(gallery_id, visibility)
+      end
+      true
+    }
+  end
+
+  def update_gallery_inherit (gallery_id, parent_id, inherit)
+    dbgprint "update_gallery_inherit: #{gallery_id}, #{inherit}"
+    perform_with_session_expire_retry {
+      auth_login unless logged_in?
+      boundary = Digest::MD5.hexdigest(gallery_id).to_s  # just hash the gallery_name itself
+      headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
+      parts = []
+      parts << key_value_to_multipart("collection_id", parent_id)
+      parts << key_value_to_multipart("inherit", inherit)
+      body = combine_parts(parts, boundary)
+      path = BSAPI+"mem/gallery/" + gallery_id + "/permission/inherit?format=xml"
+      resp = @http.post(path, body, headers)
+      handle_server_response(resp, resp.body)
+      true
+    }
+  end
+
+  def update_gallery_visibility (gallery_id, visibility)
+    dbgprint "update_gallery_visibility: #{gallery_id}, #{visibility}"
+    perform_with_session_expire_retry {
+      auth_login unless logged_in?
+      boundary = Digest::MD5.hexdigest(gallery_id).to_s  # just hash the gallery_name itself
+      headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
+      parts = []
+      parts << key_value_to_multipart("mode", visibility)
+      body = combine_parts(parts, boundary)
+      path = BSAPI+"mem/gallery/" + gallery_id + "/visibility/update?format=xml"
+      resp = @http.post(path, body, headers)
+      handle_server_response(resp, resp.body)
       true
     }
   end
@@ -2341,137 +2530,14 @@ end
 
 PSItem = Struct.new(:id, :parent_id, :type, :name, :listed, :mode, :description)
 
-#class PSAlbumList
-#  include Enumerable
-#
-#  ROOT_ITEM_ID = "**ROOT**"
-#
-#  def initialize(xml_resp)
-#    dbgprint "PhotoShelter::PSAlbumList.initialize()"
-#    if xml_resp
-#      root = xml_resp.get_elements("PhotoShelterAPI/data").first
-#      root or raise("bad server response - collection root element missing")
-#      dbgprint(root.name)
-#      @children = get_node_children(root)
-#      @children.each { |item|
-#        dbgprint "PSItem (#{item.id}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
-#  #      @by_path_title[alb.path_title] = alb
-#      }
-#    end
-#  end
-#
-#  def count
-#    @nodes.length
-#  end
-#
-#  def item_id_for_path_title(title)
-#    alb = @by_path_title[title]
-#    collection_id = alb ? alb.collection_id : ""
-#  end
-#
-#  def find_by_path_title(title)
-#    @by_path_title[title]
-#  end
-#
-#  def values
-#    @nodes
-#  end
-#
-#  def each
-#    values.each {|alb| yield alb}
-#  end
-#
-#  def paths
-#    paths_array = []
-#    @nodes.each { |alb|
-#      paths_array << alb.path_title
-#    }
-#    paths_array
-#  end
-#
-#  private
-#
-#  #take a node, gather children and return
-#  def get_node_children(parent)
-#    @kids = []
-#    parent_id = parent.name == "data" ? "" : parent.id
-#    children = parent.get_elements("children")
-#    children.each do |child|
-#      ps = construct_node(child,parent_id)
-#      @kids << ps
-#    end
-#    @kids
-#  end
-#
-#  def construct_node(node,parent_id)
-#    type = get_child_text(node, "type")
-#    if type == "collection"
-#         dbgprint "parsing a collection"
-#         listed = get_child_text(node, "listed")
-#         collection = node.get_elements("collection").first
-#         mode = get_child_text(collection, "mode")
-#         id = get_child_text(collection, "id")
-#         name = get_child_text(collection, "name")
-#         description = get_child_text(collection, "description")
-#         ps = PSItem.new(id, name, listed, mode, description)
-#
-#    end
-##    collection_id = get_child_text(node, "A_ID")
-##    title = get_child_text(node, "A_NAME")
-##    title = "unnamed" if title.strip.empty?
-##    parent_id = get_child_text(node, "A_PID")
-##    parent_id = ROOT_ITEM_ID if parent_id.strip.empty?
-##    ps = PSItem.new(collection_id, parent_id, title, "")
-##    @by_collection_id[collection_id] = ps
-#    ps
-#  end
-#
-#  def get_child_text(node, child_name)
-#    child_node = node.get_elements(child_name).first
-#    txt = child_node ? child_node.text : ""
-#    txt = "" unless txt
-#    txt
-#  end
-#
-#  def get_parent(alb)
-#    @by_collection_id[alb.parent_id]
-#  end
-#
-#  def get_parent_title(alb)
-#    return nil if alb.parent_id == ROOT_ITEM_ID
-#    get_parent(alb).title
-#  end
-#
-#  def build_path_title(alb)
-#    parent_title = ""
-#    title_so_far = alb.title
-#    cur_alb = alb
-#    while parent_title = get_parent_title(cur_alb)
-#      title_so_far = parent_title + ">" + title_so_far
-#      cur_alb = get_parent(cur_alb)
-#    end
-#    alb.path_title = ensure_unique_path(@unique_paths, title_so_far)
-#  end
-#
-#  def ensure_unique_path(uniq, orig_name)
-#    i = 2
-#    name = orig_name
-#    while uniq.has_key? name
-#      name = "#{orig_name} (#{i})"
-#      i += 1
-#    end
-#    uniq[name] = true
-#    name
-#  end
-#
-#end
-
 class PSTree
   include Enumerable
 
   ROOT_ITEM_ID = "**ROOT**"
   @top_level_nodes = []
   @top_level_collections = []
+  @top_level_galleries = []
+  @unique_paths = []
 
   def initialize(xml_resp)
     #temp
@@ -2484,6 +2550,7 @@ class PSTree
       root = xml_resp.get_elements("PhotoShelterAPI/data").first
       root or raise("bad server response - collection root element missing")
       collection_tmp_array = []
+      gallery_tmp_array = []
       @top_level_nodes = get_node_children(root, "root")
       @top_level_nodes.each { |item|
         dbgprint "PSItem (#{item.id}, #{item.parent_id}, #{item.type}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
@@ -2491,16 +2558,15 @@ class PSTree
         @by_id[item.id] = item
         if item.type == "collection"
           collection_tmp_array << item
+        else
+          gallery_tmp_array << item
         end
       }
       @top_level_collections = collection_tmp_array
+      @top_level_galleries = gallery_tmp_array
     end
   end
 
-#  def count
-#    @nodes.length
-#  end
-#
   def item_id_for_path_title(title)
     item = @by_path_title[title]
     item_id = item ? item.id : ""
@@ -2515,19 +2581,7 @@ class PSTree
     item = @by_id[item_id]
     permission = item ? item.mode : "everyone"
   end
-#
-#  def find_by_path_title(title)
-#    @by_path_title[title]
-#  end
-#
-#  def values
-#    @nodes
-#  end
-#
-#  def each
-#    values.each {|alb| yield alb}
-#  end
-#
+
   def top_level_collections
     paths_array = []
     @top_level_collections.each { |node|
@@ -2536,9 +2590,17 @@ class PSTree
     paths_array
   end
 
+  def top_level_galleries
+    paths_array = []
+    @top_level_galleries.each { |node|
+      paths_array << node.name
+    }
+    paths_array
+  end
+
   private
 
-  #take a node, gather children and return
+#  take a node, gather children and return
   def get_node_children(parent,parent_id)
     @kids = []
     children = parent.get_elements("children")
@@ -2584,37 +2646,7 @@ class PSTree
     txt = "" unless txt
     txt
   end
-#
-#  def get_parent(alb)
-#    @by_collection_id[alb.parent_id]
-#  end
-#
-#  def get_parent_title(alb)
-#    return nil if alb.parent_id == ROOT_ITEM_ID
-#    get_parent(alb).title
-#  end
-#
-#  def build_path_title(alb)
-#    parent_title = ""
-#    title_so_far = alb.title
-#    cur_alb = alb
-#    while parent_title = get_parent_title(cur_alb)
-#      title_so_far = parent_title + ">" + title_so_far
-#      cur_alb = get_parent(cur_alb)
-#    end
-#    alb.path_title = ensure_unique_path(@unique_paths, title_so_far)
-#  end
-#
-#  def ensure_unique_path(uniq, orig_name)
-#    i = 2
-#    name = orig_name
-#    while uniq.has_key? name
-#      name = "#{orig_name} (#{i})"
-#      i += 1
-#    end
-#    uniq[name] = true
-#    name
-#  end
+
 
 end
 
