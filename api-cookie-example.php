@@ -1,13 +1,12 @@
 <?php
 
-
 function postUrl($ch, $url, $post_data, $headers = array())
 {
-  
+
   $ckfile = tempnam("/tmp/tim.cf", "CURLCOOKIE");
-  
+
   echo $ckfile;
-  
+
   curl_setopt($ch, CURLOPT_COOKIESESSION, TRUE);
   curl_setopt($ch, CURLOPT_COOKIEJAR, $ckfile);
   curl_setopt($ch, CURLOPT_COOKIEFILE, $ckfile);
