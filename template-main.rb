@@ -400,16 +400,18 @@ class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
   VISIBILITY_SOME = "Those with permission"
   VISIBILITY_NONE = "No one but me"
 
-  def initialize(api_bridge, spec, pstree, parent_id, dialog_end_callback)
+  def initialize(api_bridge, spec, pstree, parent_id, is_collection, is_listed, dialog_end_callback)
 dbgprint "PShelterCreateCollectionDialog.initialize()"
     @bridge = api_bridge
     @spec = spec
     @parent_id = parent_id
+    @is_collection = is_collection
+    @is_listed = is_listed
     @pstree = pstree
     @dialog_end_callback = dialog_end_callback
     @ps = nil
     @ps_login = nil
-    @created_new_collection = false
+    @created_new_collection_id = false
     @new_collection_name = ""
     super()
   end
@@ -421,17 +423,21 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
 
   #TODO add back the key below when the dialog layout is finally complete so it gets saved for the user
 
-    dlg.set_window_position_key("PhotoShelterCreateCollectionDialogAC")
-    dlg.set_window_position(50, 100, 400, 220)
-    title = "Create New Gallery/Collection"
+    dlg.set_window_position_key("PhotoShelterCreateCollectionDialogACDC")
+    dlg.set_window_position(50, 100, 400, 180)
+    if @is_collection
+      title = "Create New Collection"
+    else
+      title = "Create New Gallery"
+    end
     dlg.set_window_title(title)
 
     parent_dlg = dlg
-    create_control(:descrip_static,         Static,         parent_dlg, :label=>"Create New:", :align=>"left")
+ #   create_control(:descrip_static,         Static,         parent_dlg, :label=>"Create New:", :align=>"left")
 
-    create_control(:create_gallery,        RadioButton,    dlg, :label=>"Gallery", :checked=>true)
-    create_control(:create_collection,            RadioButton,    dlg, :label=>"Collection")
-    RadioButton.set_exclusion_group(@create_gallery, @create_collection)
+#    create_control(:create_gallery,        RadioButton,    dlg, :label=>"Gallery", :checked=>true)
+#    create_control(:create_collection,            RadioButton,    dlg, :label=>"Collection")
+#    RadioButton.set_exclusion_group(@create_gallery, @create_collection)
 
     create_control(:new_collection_static,          Static,         parent_dlg, :label=>"Name:", :align=>"left")
     create_control(:new_collection_edit,            EditControl,    parent_dlg, :value=>"", :persist=>false)
@@ -453,7 +459,7 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
 
   def destroy_dialog!
     super
-    (@dialog_end_callback.call(@created_new_collection, @new_collection_name) if @dialog_end_callback) rescue nil
+    (@dialog_end_callback.call(@created_new_collection_id, @new_collection_name) if @dialog_end_callback) rescue nil
   end
 
   def layout_controls
@@ -466,12 +472,12 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
     c = LayoutContainer.new(0, 0, client_width, client_height)
     c.inset(16, 10, -16, -10)
     c.pad_down(4).mark_base
-    c << @descrip_static.layout(0, c.base+3, 100, sh)
+#    c << @descrip_static.layout(0, c.base+3, 100, sh)
 
-    w1 = 80
-    c << @create_gallery.layout(c.prev_right, c.base, w1, sh)
-    c << @create_collection.layout(c.prev_right, c.base, w1, sh)
-    c.pad_down(14).mark_base
+#    w1 = 80
+#    c << @create_gallery.layout(c.prev_right, c.base, w1, sh)
+#    c << @create_collection.layout(c.prev_right, c.base, w1, sh)
+#    c.pad_down(14).mark_base
 
     w1 = 250
     c << @new_collection_static.layout(0, c.base+3, 45, sh)
@@ -492,25 +498,13 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
   protected
 
   def update_collection_gallery_creation_controls
+    @visibility_options.set_selected_item(VISIBILITY_NONE)
+    @visibility_options.enable( true )
+    @inherit_check.set_check false
     if @parent_id != ""
       parent_permission = @pstree.get_item_permission(@parent_id)
-      case parent_permission
-      when "everyone"
-        visibility = "everyone"
-      when "permission"
-        @visibility_options.set_selected_item(VISIBILITY_SOME)
-      when "private"
-        @visibility_options.set_selected_item(VISIBILITY_NONE)
-      else
-        @visibility_options.set_selected_item(VISIBILITY_EVERYONE)
-      end
-      @visibility_options.enable( false )
-      @inherit_check.set_check true
       @inherit_check.enable( true )
     else
-      @visibility_options.set_selected_item(VISIBILITY_NONE)
-      @visibility_options.enable( true )
-      @inherit_check.set_check false
       @inherit_check.enable( false )
     end
 
@@ -524,8 +518,20 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
   def toggle_permissions
     if @inherit_check.checked?
       @visibility_options.enable( false )
+      parent_permission = @pstree.get_item_permission(@parent_id)
+      case parent_permission
+      when "everyone"
+        @visibility_options.set_selected_item(VISIBILITY_EVERYONE)
+      when "permission"
+        @visibility_options.set_selected_item(VISIBILITY_SOME)
+      when "private"
+        @visibility_options.set_selected_item(VISIBILITY_NONE)
+      else
+        @visibility_options.set_selected_item(VISIBILITY_NONE)
+      end
     else
       @visibility_options.enable( true )
+      @visibility_options.set_selected_item(VISIBILITY_NONE)
     end
   end
 
@@ -536,7 +542,7 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
 
     name = @new_collection_edit.get_text.strip
     if name.empty?
-      Dlg::MessageBox.ok("Please enter a non-blank collection name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+      Dlg::MessageBox.ok("Please enter a non-blank name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
       return
     end
 
@@ -568,18 +574,22 @@ dbgprint "PShelterCreateCollectionDialog.initialize()"
         vis = "private"
       end
 
-      type = "collection"
-      if @create_gallery.checked?
-        type = "gallery"
+      type = "gallery"
+      if @is_collection
+        type = "collection"
       end
 
-      #todo fix with real value
-      f_list = "f"
-      @created_new_collection = @ps.create_collection_gallery(@parent_id, type, name, f_list, inherit, vis)
+      if @is_listed
+        f_list = "t"
+      else
+        f_list = "f"
+      end
+      @created_new_collection_id = @ps.create_collection_gallery(@parent_id, type, name, f_list, inherit, vis)
 
       @pstree = @ps.collection_query
 
     rescue StandardError => ex
+      dbgprint(ex.message)
       Dlg::MessageBox.ok("Failed to create collection '#{name}' at PhotoShelter.\nError: #{ex.message}", Dlg::MessageBox::MB_ICONEXCLAMATION)
     ensure
       @ps.auth_logout if @ps
@@ -633,12 +643,11 @@ dbgprint "PShelterFileUploaderUI.initialize()"
     create_control(:browser_tree_website,        RadioButton,    dlg, :label=>"Listed On Website", :checked=>true)
     create_control(:browser_tree_non_website,            RadioButton,    dlg, :label=>"Unlisted On Website")
     RadioButton.set_exclusion_group(@browser_tree_website, @browser_tree_non_website)
+    create_control(:browser_refresh,   Button,         dlg, :label=>"Refresh")
+    create_control(:browser_create_collection_button,   Button,         dlg, :label=>"New Collection...")
+    create_control(:browser_create_gallery_button,      Button,         dlg, :label=>"New Gallery...")
 
     create_control(:browser_columnbrowser,              PShelterColumnBrowser, dlg)
-#    create_control(:browser_collection_static,     Static,         dlg, :label=>"Upload Gallery:", :align=>"right")
-#    create_control(:browser_collection_combo,      ComboBox,       dlg, :sorted=>false, :editable=>true, :persist=>false)
-#    create_control(:browser_create_collection_button,   Button,         dlg, :label=>"New Collection...")
-#    create_control(:browser_create_gallery_button,      Button,         dlg, :label=>"New Gallery...")
     create_control(:browser_pubsearch_check,       CheckBox,       dlg, :label=>"Make Images Publicly Searchable")
     create_control(:browser_file_exists_static,    Static,         dlg, :label=>"If file already exists on server:", :align=>"right")
     create_control(:browser_file_exists_combo,     ComboBox,       dlg, :items=>[DEST_EXISTS_UPLOAD_ANYWAY_LABEL,DEST_EXISTS_RENAME_LABEL,DEST_EXISTS_SKIP_LABEL], :selected=>DEST_EXISTS_UPLOAD_ANYWAY_LABEL, :sorted=>false, :persist=>true)
@@ -702,16 +711,15 @@ dbgprint "PShelterFileUploaderUI.initialize()"
       w1 = 150
       c << @browser_tree_website.layout(c.prev_right, c.base, w1, sh)
       c << @browser_tree_non_website.layout(c.prev_right, c.base, w1, sh)
+      c << @browser_refresh.layout("100%-120", c.base, 120, sh)
+      c.pad_down(10).mark_base
+      c << @browser_create_collection_button.layout(0, c.base, 160, 24)
+      c << @browser_create_gallery_button.layout(c.prev_right, c.base, 160, 24)
       c.pad_down(14).mark_base
 
       c << @browser_columnbrowser.layout(5, c.base, -5, 200)
       c.pad_down(8).mark_base
 
-#      c << @browser_collection_static.layout(0, c.base+3, 120, sh)
-#      c << @browser_collection_combo.layout(c.prev_right, c.base, "60%", eh)
-#      c << @browser_create_collection_button.layout(c.prev_right, c.base, 160, 24)
-#      c << @browser_create_gallery_button.layout(c.prev_right, c.base, 160, 24)
-#      c.pad_down(5).mark_base
       c << @browser_pubsearch_check.layout(0, c.base, 250, eh)
         c << @browser_file_exists_static.layout(c.prev_right, c.base+3, 200, sh)
           c << @browser_file_exists_combo.layout(c.prev_right, c.base, -1, eh)
@@ -770,15 +778,24 @@ end
 
 class PShelterColumnBrowser < Dlg::ColumnBrowser
 
+  @cached_items = {}
+  @cached_path_cache = {}
+  @cached_pstree = {}
+  @cached_full_selpath = []
+  @cache_is_set = false
+
   ROOT = "/"
 
   def post_init
     @items = {}
     @path_cache = {}
+    @full_selpath = []
 
     @gallerycolor = 0x000000
     @collectioncolor = 0x333333
     @addcolor = 0x33af33
+    @last_selected_row = 0
+    @last_selected_col = 0
 
     self.on_query_num_rows_in_column do |col, full_selpath|
       begin
@@ -792,7 +809,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
 
     self.on_will_display_cell_at_row_col do |row, col, full_selpath|
       begin
-#        dbgprint "on_will_display_cell_at_row_col  row=#{row} col=#{col} full_selpath=#{full_selpath.inspect}"
+       dbgprint "on_will_display_cell_at_row_col  row=#{row} col=#{col} full_selpath=#{full_selpath.inspect}"
         will_display_cell_at_row_col(row, col, full_selpath)
       rescue Exception => ex
         dbglog("PShelterColumnBrowser:on_will_display_cell_at_row_col exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
@@ -804,6 +821,14 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
       begin
         selected_path = get_selected_path
         node = @items[col][row]
+        dbgprint("        @last_selected_col = col
+        @last_selected_row = row")
+        dbgprint(col)
+        dbgprint(row)
+        @last_selected_col = col
+        @last_selected_row = row
+        dbgprint(@last_selected_col)
+        dbgprint(@last_selected_row)
         @pstree.update_selected(node)
         if(node.type == "collection")
           nodes = @pstree.get_cached_children(node)
@@ -826,13 +851,40 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
 
   def set_tree(tree,listed_on_website)
     @pstree = tree
-    if listed_on_website
-      nodes = @pstree.top_level_nodes(true)
+
+    if @cache_is_set == true && @cached_full_selpath != {}
+      @pstree.set_cache(@cached_pstree)
+      @items = @cached_items
+      @path_cache = @cached_path_cache
+
+      @items.each do |col, value|
+        tmp_node_array = []
+        value.each do |row, node|
+      #    dbgprint "#{__method__}: col=#{col} row=#{row} node=#{node.inspect}"
+          tmp_node_array[row] = node
+        end
+        setup_column(col, tmp_node_array, @cached_full_selpath)
+      end
+
+      load_column_zero
+
+      col = 0
+      @cached_full_selpath.each do |row|
+        #dbgprint "select_row_in_column: col=#{col} row=#{row}"
+        select_row_in_column(row, col)
+        col = col + 1
+      end
+
     else
-      nodes = @pstree.top_level_nodes(false)
+      if listed_on_website
+        nodes = @pstree.top_level_nodes(true)
+      else
+        nodes = @pstree.top_level_nodes(false)
+      end
+      col = 0
+      setup_column(col,nodes,[])
+      load_column_zero
     end
-    col = 0
-    setup_column(col,nodes,[])
   end
 
   def reset_tree(listed_on_website)
@@ -845,10 +897,106 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
     @items = {}
     col = 0
     setup_column(col,nodes,[])
+    load_column_zero
+  end
+
+  def update_column(col,is_listed, created_new_collection_id)
+    dbgprint("inside update_column(col,is_listed, created_new_collection_id): col=#{col} is_listed=#{is_listed} created_new_collection_id=#{created_new_collection_id}")
+    #col will never be 0 in here!
+    selected_path = get_selected_path
+    @items[col] = {}
+    row = selected_path[col-1]
+dbgprint("@selected_path: #{selected_path.inspect}")
+dbgprint("row: #{row.inspect}")
+    node = @items[col-1][row]
+dbgprint("node: #{node.inspect}")
+dbgprint "a"
+
+    @pstree.update_selected(node)
+dbgprint "b"
+    if(node.type == "collection")
+      dbgprint "c"
+      nodes = @pstree.get_children(node)
+      dbgprint "d"
+      dbgprint("nodes: #{nodes.inspect}")
+      dbgprint "e"
+      setup_column(col,nodes,selected_path)
+      dbgprint "f"
+    end
+dbgprint "g"
+    num_items = query_num_rows_in_column(col, selected_path)
+    row = 0
+    while row < num_items  do
+      will_display_cell_at_row_col(row, col, selected_path)
+       row +=1
+    end
+    reload_column(col)
+
+    new_item_row = 0
+    row = 0
+    nodes.each do |node|
+      dbgprint("node:#{node}")
+      if node.id == created_new_collection_id
+        dbgprint("matched @ row: #{row}")
+        new_item_row = row
+      end
+      row = row+1
+    end
+    #select the new item here
+    select_row_in_column(new_item_row, col)
   end
 
   def get_items
     @items
+  end
+
+  def set_cached_items(items)
+    @cached_items = items
+  end
+
+  def get_full_selpath
+    @full_selpath
+  end
+
+  def set_cached_full_selpath(full_selpath)
+    @cached_full_selpath = full_selpath
+  end
+
+  def get_pstree_cache
+    @pstree.get_cache
+  end
+
+  def set_cached_pstree(cache)
+    @cached_pstree = cache
+    @cache_is_set = true
+  end
+
+  def get_last_selected_col
+    dbgprint("get_last_selected_col")
+    dbgprint(@last_selected_col)
+    @last_selected_col
+  end
+
+  def get_last_selected_row
+    dbgprint("get_last_selected_row")
+    dbgprint(@last_selected_row)
+    @last_selected_row
+  end
+
+  def set_last_selected_col(col)
+    @last_selected_col = col
+  end
+
+  def set_last_selected_row(row)
+    @last_selected_row = row
+  end
+
+  def get_path_cache
+    @path_cache
+  end
+
+  def set_cached_path_cache(path_cache)
+    @cached_path_cache = path_cache
   end
 
   def public_reload_column(col)
@@ -870,7 +1018,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
   end
 
   def will_display_cell_at_row_col(row, col, full_selpath)
-  #    dbgprint "#{__method__}: col=#{col} row=#{row} full_selpath=#{full_selpath.inspect}"
+    dbgprint "#{__method__}: col=#{col} row=#{row} full_selpath=#{full_selpath.inspect}"
     node = {}
     if @items.key?(col)
       if @items[col].key?(row)
@@ -882,38 +1030,44 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
     dat = generate_cell_data(node)
     dat
   end
+
+  def reset_cache
+    @cache_is_set = false
+    @items = {}
+  end
+
   protected
 
   def setup_column(col,nodes,full_selpath)
+    dbgprint("inside setup_column(col,nodes,full_selpath): #{col}, #{nodes.inspect}, #{full_selpath.inspect}")
     already_has_add_collection = false
 
     tmp_path_array = []
     nodes.each do |node|
       begin
         tmp_path_array << node.name
-        if node.type == "add"
-          already_has_add_collection = true
-        end
+#        if node.type == "add"
+#          already_has_add_collection = true
+#        end
       rescue Exception => ex
 #        dbglog("PShelterColumnBrowser:setup_column exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
         raise
       end
     end
 
-    if already_has_add_collection == false
-      parent_id = ""
-      if col > 0
-        parent_id = @items[col-1][full_selpath[col-1]].id
-      end
-      spacer = @pstree.get_spacer_node(col,parent_id)
-      add_collection = @pstree.get_add_a_collection_node(col,parent_id)
-      if !nodes.empty?
-        nodes << spacer
-        tmp_path_array << spacer.name
-      end
-      nodes << add_collection
-      tmp_path_array << add_collection.name
-    end
+#    if already_has_add_collection == false
+#
+#      tmp_tmp_path_array = []
+#      parent_id = ""
+#      if col > 0
+#        parent_id = @items[col-1][full_selpath[col-1]].id
+#      end
+##      spacer = @pstree.get_spacer_node(col,parent_id)
+#      add_collection = @pstree.get_add_a_collection_node(col,parent_id)
+#      nodes.unshift(add_collection)
+#      tmp_path_array.unshift(add_collection.name)
+#
+#    end
 
     if col == 0
       @path_cache[ROOT] = tmp_path_array
@@ -922,6 +1076,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
       path = build_path_from_selpath(selpath)
       @path_cache[path] = tmp_path_array
     end
+    @items[col] = {}
     row = 0
     nodes.each do |node|
       begin
@@ -934,9 +1089,8 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
     end
   end
 
-
-
   def setup_cell(row, col, full_selpath, node)
+     @full_selpath = full_selpath
      if !@items.key?(col)
        @items[col] = {}
      end
@@ -1029,7 +1183,7 @@ class PShelterFileUploader
   end
 
   def initialize(pm_api_bridge, num_files, dlg_status_bridge, conn_settings_serializer)
-dbgprint "PShelterFileUploader.initialize()"
+    dbgprint "PShelterFileUploader.initialize()"
     @bridge = pm_api_bridge
     @num_files = num_files
     @dlg_status_bridge = dlg_status_bridge
@@ -1068,17 +1222,89 @@ dbgprint "PShelterFileUploader.initialize()"
     @ui = PShelterFileUploaderUI.new(@bridge)
     @ui.create_controls(parent_dlg)
 
-#    @ui.browser_create_collection_button.on_click {run_create_collection_dialog}
-#    @ui.browser_create_gallery_button.on_click {run_create_gallery_dialog}
-
     @ui.browser_tree_website.on_click{
+      @ui.browser_columnbrowser.set_last_selected_col(-1)
+      @ui.browser_columnbrowser.set_last_selected_row(-1)
       @ui.browser_columnbrowser.reset_tree(true)
       @ui.browser_columnbrowser.public_reload_column(0)
     }
+
     @ui.browser_tree_non_website.on_click{
+      @ui.browser_columnbrowser.set_last_selected_col(-1)
+      @ui.browser_columnbrowser.set_last_selected_row(-1)
       @ui.browser_columnbrowser.reset_tree(false)
       @ui.browser_columnbrowser.public_reload_column(0)
     }
+
+    @ui.browser_refresh.on_click{
+      dbgprint "refresh clicked"
+      @ui.browser_columnbrowser.reset_cache
+      @data_fetch_worker.clear_pstree
+      account_parameters_changed
+    }
+
+    @ui.browser_create_collection_button.on_click{
+      begin
+         selected_path = @ui.browser_columnbrowser.get_selected_path
+         row = @ui.browser_columnbrowser.get_last_selected_row
+         col = @ui.browser_columnbrowser.get_last_selected_col
+         items = @ui.browser_columnbrowser.get_items
+         selected_type = "collection"
+         if row == -1 || col == -1
+           dbgprint "row == -1 || col == -1"
+           parent_id = ""
+         else
+           parent_node = items[col][row]
+           dbgprint("parent_node = #{parent_node.inspect}")
+           if parent_node.type == "gallery"
+             selected_type = "gallery"
+             if col == 0
+               parent_id = ""
+             else
+               parent_node = @pstree.get_item_by_id(parent_node.parent_id)
+               col = col-1
+               parent_id = parent_node.id
+             end
+           else
+             parent_id = parent_node.id
+           end
+         end
+         run_create_collection_dialog(parent_id, col, selected_path, true, selected_type)
+       rescue Exception => ex
+           dbglog("PShelterColumnBrowser:@ui.browser_create_collection_button.on_click exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
+         raise
+       end
+    }
+    @ui.browser_create_gallery_button.on_click {
+      begin
+        selected_path = @ui.browser_columnbrowser.get_selected_path
+        row = @ui.browser_columnbrowser.get_last_selected_row
+        col = @ui.browser_columnbrowser.get_last_selected_col
+        items = @ui.browser_columnbrowser.get_items
+        selected_type = "collection"
+        if row == -1 && col == -1
+          parent_id = ""
+        else
+          parent_node = items[col][row]
+          if parent_node.type == "gallery"
+            selected_type = "gallery"
+            if col == 0
+              parent_id = ""
+            else
+              parent_node = @pstree.get_item_by_id(parent_node.parent_id)
+              col = col-1
+              parent_id = parent_node.id
+            end
+          else
+            parent_id = parent_node.id
+          end
+        end
+        run_create_collection_dialog(parent_id, col, selected_path, false, selected_type)
+      rescue Exception => ex
+         dbglog("PShelterColumnBrowser:@ui.browser_create_gallery_button.on_click exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
+       raise
+     end
+  }
 
     @ui.send_original_radio.on_click {adjust_controls}
     @ui.send_jpeg_radio.on_click {adjust_controls}
@@ -1086,34 +1312,34 @@ dbgprint "PShelterFileUploader.initialize()"
     @ui.dest_account_combo.on_sel_change {account_parameters_changed}
     @ui.dest_org_combo.on_sel_change {account_parameters_changed}
 
-    @ui.browser_columnbrowser.on_double_click do |row, col|
-      begin
-         selected_path = @ui.browser_columnbrowser.get_selected_path
-         items = @ui.browser_columnbrowser.get_items
-         node = items[col][row]
-         if(node.type == "add")
-           col = selected_path.size-2
-           if col == -1
-             row = "ROOT"
-             parent_id = ""
-           else
-             row = selected_path[col]
-             parent_id = items[col][row].id
-           end
-           run_create_collection_dialog(parent_id)
-         end
-         num_items = @ui.browser_columnbrowser.query_num_rows_in_column(col, selected_path)
-         row = 0
-         while row < num_items  do
-           @ui.browser_columnbrowser.will_display_cell_at_row_col(row, col, selected_path)
-           row +=1
-         end
-         @ui.browser_columnbrowser.reload_column(col)
-       rescue Exception => ex
-    #       dbglog("PShelterColumnBrowser:on_query_num_rows_in_column exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
-         raise
-       end
-     end
+#    @ui.browser_columnbrowser.on_double_click do |row, col|
+#      begin
+#         selected_path = @ui.browser_columnbrowser.get_selected_path
+#         items = @ui.browser_columnbrowser.get_items
+#         node = items[col][row]
+#         if(node.type == "add")
+#           col = selected_path.size-2
+#           if col == -1
+#             row = "ROOT"
+#             parent_id = ""
+#           else
+#             row = selected_path[col]
+#             parent_id = items[col][row].id
+#           end
+#           run_create_collection_dialog(parent_id, col, selected_path)
+#         end
+#         num_items = @ui.browser_columnbrowser.query_num_rows_in_column(col, selected_path)
+#         row = 0
+#         while row < num_items  do
+#           @ui.browser_columnbrowser.will_display_cell_at_row_col(row, col, selected_path)
+#           row +=1
+#         end
+#         @ui.browser_columnbrowser.reload_column(col)
+#       rescue Exception => ex
+#    #       dbglog("PShelterColumnBrowser:on_query_num_rows_in_column exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
+#         raise
+#       end
+#     end
 
     add_jpeg_controls_event_hooks
     add_operations_controls_event_hooks
@@ -1138,9 +1364,17 @@ dbgprint "PShelterFileUploader.initialize()"
   def save_state(serializer)
     return unless @ui
     serializer.store(DLG_SETTINGS_KEY, :selected_account, @ui.dest_account_combo.get_selected_item)
-#    serializer.store(DLG_SETTINGS_KEY, :selected_group,   @ui.browser_collection_combo.get_selected_item)
     serializer.store(DLG_SETTINGS_KEY, :selected_org,     @ui.dest_org_combo.get_selected_item)
     serializer.store(DLG_SETTINGS_KEY, :selected_photog,  @ui.dest_photog_combo.get_selected_item)
+
+    serializer.store(DLG_SETTINGS_KEY, :selected_listed,   @ui.browser_tree_website.checked?)
+    serializer.store(DLG_SETTINGS_KEY, :cached_items,   @ui.browser_columnbrowser.get_items)
+    serializer.store(DLG_SETTINGS_KEY, :cached_path,   @ui.browser_columnbrowser.get_path_cache)
+    serializer.store(DLG_SETTINGS_KEY, :cached_tree,   @ui.browser_columnbrowser.get_pstree_cache)
+    serializer.store(DLG_SETTINGS_KEY, :cached_full_selpath,   @ui.browser_columnbrowser.get_full_selpath)
+
+    serializer.store(DLG_SETTINGS_KEY, :cached_selected_row,   @ui.browser_columnbrowser.get_last_selected_row)
+    serializer.store(DLG_SETTINGS_KEY, :cached_selected_col,   @ui.browser_columnbrowser.get_last_selected_col)
   end
 
   def restore_state(serializer)
@@ -1167,6 +1401,37 @@ dbgprint "PShelterFileUploader.initialize()"
 #    update_combo(:browser_collection_combo, [prev_selected_collection]) unless prev_selected_collection.to_s.empty?
     update_combo(:dest_org_combo, [prev_selected_org]) unless prev_selected_org.to_s.empty?
     update_combo(:dest_photog_combo, [prev_selected_photog]) unless prev_selected_photog.to_s.empty?
+
+    if serializer.fetch(DLG_SETTINGS_KEY, :cached_tree) != nil
+      @pstree = serializer.fetch(DLG_SETTINGS_KEY, :cached_tree)
+      @ui.browser_columnbrowser.set_cached_pstree(serializer.fetch(DLG_SETTINGS_KEY, :cached_tree))
+    end
+
+    if serializer.fetch(DLG_SETTINGS_KEY, :cached_items)
+      @ui.browser_columnbrowser.set_cached_items(serializer.fetch(DLG_SETTINGS_KEY, :cached_items))
+    end
+
+    if serializer.fetch(DLG_SETTINGS_KEY, :cached_path) != nil
+      @ui.browser_columnbrowser.set_cached_path_cache(serializer.fetch(DLG_SETTINGS_KEY, :cached_path))
+    end
+
+    if serializer.fetch(DLG_SETTINGS_KEY, :cached_full_selpath) != nil
+      @ui.browser_columnbrowser.set_cached_full_selpath(serializer.fetch(DLG_SETTINGS_KEY, :cached_full_selpath))
+    end
+
+    if serializer.fetch(DLG_SETTINGS_KEY, :cached_selected_row) != nil
+      @ui.browser_columnbrowser.set_last_selected_row(serializer.fetch(DLG_SETTINGS_KEY, :cached_selected_row))
+    end
+
+    if serializer.fetch(DLG_SETTINGS_KEY, :cached_selected_col) != nil
+      @ui.browser_columnbrowser.set_last_selected_col(serializer.fetch(DLG_SETTINGS_KEY, :cached_selected_col))
+    end
+    prev_listed = serializer.fetch(DLG_SETTINGS_KEY, :selected_listed)
+    if prev_listed
+      @ui.browser_tree_website.set_check
+    else
+      @ui.browser_tree_non_website.set_check
+    end
 
     account_parameters_changed
     adjust_controls
@@ -1216,8 +1481,17 @@ dbgprint "PShelterFileUploader.initialize()"
 
   protected
 
-  def run_create_collection_dialog(parent_id)
+  def  run_create_collection_dialog(parent_id, col, selected_path, is_collection, selected_type)
     return unless @pstree
+    if selected_type == "collection"
+      col = col + 1
+    end
+
+    if @ui.browser_tree_website.checked?
+      is_listed = true
+    else
+      is_listed = false
+    end
 
     # these sanity checks really shouldn't be necessary, as
     # the create button is in theory disabled if they are false
@@ -1234,22 +1508,27 @@ dbgprint "PShelterFileUploader.initialize()"
 
     spec = build_upload_spec(acct, @ui)
 
-    dialog_end_callback = lambda {|created_new_collection, new_collection_name| handle_new_collection_created(created_new_collection, new_collection_name)}
-    cdlg = PShelterCreateCollectionDialog.new(@bridge, spec, @pstree, parent_id, dialog_end_callback)
+    dbgprint("inside run_create_collection_dialog parent_id = #{parent_id}")
+
+    dialog_end_callback = lambda {|created_new_collection_id, new_collection_name| handle_new_collection_created(created_new_collection_id, new_collection_name, col, is_listed)}
+    cdlg = PShelterCreateCollectionDialog.new(@bridge, spec, @pstree, parent_id, is_collection, is_listed, dialog_end_callback)
     cdlg.instantiate!
     cdlg.request_deferred_modal
   end
 
-  def handle_new_collection_created (created_new_collection, new_collection_name)
-    if created_new_collection
-      # just blow away the collections combobox contents with the
-      # new name... we'll be forcing a reload, and the new selection
-      # will be preserved when the data is reloaded
-#      @ui.browser_collection_combo.reset_content( [new_collection_name] )
-#      @ui.browser_collection_combo.set_selected_item(new_collection_name)
-      @data_fetch_worker.clear_pstree
-      account_parameters_changed
-      set_status_text "New collection created."
+  def handle_new_collection_created (created_new_collection_id, new_collection_name, col, is_listed)
+    if created_new_collection_id != false
+      dbgprint("about to update col:")
+      dbgprint(col)
+
+      if col == 0
+        @ui.browser_columnbrowser.reset_cache
+        @data_fetch_worker.clear_pstree
+        account_parameters_changed
+      else
+        @ui.browser_columnbrowser.update_column(col,is_listed,created_new_collection_id)
+      end
+      set_status_text "New Collection / Gallery Created."
     else
       set_status_text "Ready."
     end
@@ -1280,13 +1559,22 @@ dbgprint "PShelterFileUploader.initialize()"
     ctl.enable( @data_fetch_worker && @data_fetch_worker.can_make_publicly_searchable?, :state_while_disabled => false )
 
     ctl = @ui.browser_tree_website
-    ctl.enable( @pstree )
+    ctl.enable( @data_fetch_worker && @pstree )
 
     ctl = @ui.browser_tree_non_website
-    ctl.enable( @pstree )
+    ctl.enable( @data_fetch_worker && @pstree )
 
     ctl = @ui.browser_columnbrowser
-    ctl.enable( @pstree )
+    ctl.enable( @data_fetch_worker && @pstree )
+
+    ctl = @ui.browser_refresh
+    ctl.enable( @data_fetch_worker && @pstree )
+
+    ctl = @ui.browser_create_collection_button
+    ctl.enable( @data_fetch_worker && @pstree )
+
+    ctl = @ui.browser_create_gallery_button
+    ctl.enable( @data_fetch_worker && @pstree )
 
   end
 
@@ -1311,8 +1599,13 @@ dbgprint "PShelterFileUploader.initialize()"
         spec.photoshelter_collection = selected_node.id
         spec.photoshelter_gallery = ""
       else
-        spec.photoshelter_collection = ""
-        spec.photoshelter_gallery = selected_node.id
+        if selected_node.type == "gallery"
+          spec.photoshelter_collection = ""
+          spec.photoshelter_gallery = selected_node.id
+        else
+          spec.photoshelter_collection = selected_node.parent_id
+          spec.photoshelter_gallery = ""
+        end
       end
     end
 
@@ -1421,27 +1714,15 @@ dbgprint "PShelterFileUploader.initialize()"
           org_list, pstree, photog_list = @data_fetch_worker.result
         end
 
-#        path_list = ["**ERROR**"]
-        if pstree
+        if pstree && @pstree == nil
 #          path_list = pstree.top_level_galleries.sort_by{|o| o.downcase}
           @pstree = pstree
-#          top_level_nodes = pstree.top_level_nodes(false)
         end
 
         update_combo(:dest_org_combo, org_list)
         update_combo(:dest_photog_combo, photog_list)
 
-        @ui.browser_columnbrowser.set_tree( @pstree, @ui.browser_tree_website.checked?)
-        @ui.browser_columnbrowser.load_column_zero
-
-#        cur_collection_name = @ui.browser_collection_combo.get_selected_item
-#        @ui.browser_collection_combo.reset_content( path_list )
-#        @ui.browser_collection_combo.set_selected_item(cur_collection_name) unless cur_collection_name.empty?
-        # if no item was selected, just select the 1st one
-#        if @ui.browser_collection_combo.get_selected_item.empty?  &&  @ui.browser_collection_combo.num_items > 0
-#          @ui.browser_collection_combo.set_selected_item( @ui.browser_collection_combo.get_item_at(0) )
-#        end
-
+        @ui.browser_columnbrowser.set_tree(@pstree, @ui.browser_tree_website.checked?)
         adjust_controls
       end
     end
@@ -2029,6 +2310,8 @@ class Connection
       else
         path = BSAPI+"mem/gallery/insert?format=xml"
       end
+      dbgprint(body.inspect)
+      dbgprint(path.inspect)
       resp = @http.post(path, body, headers)
       handle_server_response(resp, resp.body)
       id = @last_response_xml.get_elements("PhotoShelterAPI/data/id").map {|e| e.text }.join
@@ -2037,7 +2320,7 @@ class Connection
       else
         update_collection_gallery_visibility(id, type, visibility)
       end
-      true
+      id
     }
   end
 
@@ -2174,23 +2457,28 @@ class Connection
 
   # Test whether <filename> exists within <collection_id>.
   #
-  def image_exist?(collection_id, filename)
-    collection_id = "Default" if collection_id.strip.empty?
+  def image_exist(gallery_id, filename)
+    gallery_id = "Default" if gallery_id.strip.empty?
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-      if collection_id == "Default"
-        path = BSAPI+"img-qry?A_NAME=Default&I_FILE_NAME=#{CGI.escape(filename)}"
-      else
-        path = BSAPI+"img-qry?A_ID=#{CGI.escape(collection_id)}&I_FILE_NAME=#{CGI.escape(filename)}"
-      end
-      headers = get_default_headers
-      http = @http
-      resp = http.get(path, headers)
+      path = BSAPI+"mem/image/query?format=xml"
+      boundary = Digest::MD5.hexdigest(gallery_id).to_s  # just hash the collection_name itself
+      headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
+      parts = []
+      parts << key_value_to_multipart("gallery_id", gallery_id)
+      parts << key_value_to_multipart("file_name", filename)
+      body = combine_parts(parts, boundary)
+      resp = @http.post(path, body, headers)
       handle_server_response(resp, resp.body)
-# @last_response_xml.write($stderr, 0)
+      #@last_response_xml.write($stderr, 0)
+     # dbgprint @last_response_xml.inspect
       exists = false
-      @last_response_xml.get_elements("BitShelterAPI/return/img").each {|e| exists = true}
-  dbgprint "image_exist('#{collection_id}','#{filename}') = #{exists}"
+      total = 0
+      total = @last_response_xml.get_elements("PhotoShelterAPI/data/total").map {|e| e.text }.join
+      if total.to_i > 0
+        exists = true
+      end
+      dbgprint "image_exist('#{gallery_id}','#{filename}') = #{exists}"
       exists
     }
   end
@@ -2198,7 +2486,7 @@ class Connection
   def find_unique_filename_on_server(collection_id, filename)
     base, ext = filename.split(/\.(?=[^.]*\z)/)
     "A".upto("Z".succ) do |mod|
-      return filename unless image_exist?(collection_id, filename)
+      return filename unless image_exist(collection_id, filename)
       filename = "#{base}#{mod}.#{ext}"
     end
     raise PhotoShelterError, "Failed all attempts to find unique name for file #{base}.#{ext} in collection #{collection_id}."
@@ -2238,16 +2526,48 @@ class Connection
   #   Else, returns final_remote_filename, whatever filename we used
   #     to upload after whatever collision renaming may have occurred.
 
+  def get_gallery_to_upload_to(parent_id)
+    xml_resp = collection_children_query(parent_id)
+    if xml_resp
+      data = xml_resp.get_elements("PhotoShelterAPI/data").first
+      data or raise("bad server response - collection root element missing")
+      gallery_id = ""
+      children = data.get_elements("children")
+      children.each do |child|
+        type = child.get_elements("type").first
+        type_text = type ? type.text : ""
+        type_text = "" unless type_text
+        if type_text == "gallery"
+          gallery_node = child.get_elements("gallery").first
+          gal = gallery_node.get_elements("name").first
+          gallery_name = gal ? gal.text : ""
+          gallery_name = "" unless gallery_name
+          if gallery_name == "Uploader"
+            gal = gallery_node.get_elements("id").first
+            gallery_id = gal ? gal.text : ""
+            gallery_id = "" unless gallery_id
+          end
+        end
+      end
+    end
+    gallery_id
+  end
+
   def image_upload(local_pathtofile, remote_filename, gallery_id, collection_id, photog_name, rotation, rating, is_tagged, publicly_searchable, replace_style)
     perform_with_session_expire_retry {
       auth_login unless logged_in?
 #      photog_name = nil if photog_name.to_s.strip.empty?
 #      rotation = rotation.to_i
-#      if replace_style == "SKIP_FILE"
-#        return :skipped if image_exist?(gallery_id, remote_filename)
-#      elsif replace_style == "RENAME_BEFORE_UPLOADING"
-#        remote_filename = find_unique_filename_on_server(gallery_id, remote_filename)
-#      end
+
+      if gallery_id == "" && collection_id != ""
+        gallery_id = get_gallery_to_upload_to(collection_id)
+      end
+
+      if replace_style == "SKIP_FILE"
+        return :skipped if image_exist(gallery_id, remote_filename)
+      elsif replace_style == "RENAME_BEFORE_UPLOADING"
+        remote_filename = find_unique_filename_on_server(gallery_id, remote_filename)
+      end
 
       # binary_data = File.open(local_pathtofile, "rb") {|f| f.read}
       binary_data = @bridge.read_file_for_upload(local_pathtofile)
@@ -2502,10 +2822,11 @@ class PSTree
           non_website_tmp_array << item
         end
       }
-      @top_level_collections = collection_tmp_array
-      @top_level_galleries = gallery_tmp_array
-      @top_level_website_nodes = website_tmp_array
-      @top_level_non_website_nodes = non_website_tmp_array
+      @top_level_nodes = @top_level_nodes.sort_by { |k| k.name.downcase }
+      @top_level_collections = collection_tmp_array.sort_by { |k| k.name.downcase }
+      @top_level_galleries = gallery_tmp_array.sort_by { |k| k.name.downcase }
+      @top_level_website_nodes = website_tmp_array.sort_by { |k| k.name.downcase }
+      @top_level_non_website_nodes = non_website_tmp_array.sort_by { |k| k.name.downcase }
     end
 
     @selected = PSItem.new("", "", "", "", "", "", "")
@@ -2530,12 +2851,24 @@ class PSTree
 
   end
 
+  def get_cache
+    @children
+  end
+
+  def set_cache(children)
+    @children = children
+  end
+
   def get_cached_children(node)
     if @children[node.id]
       @children[node.id]
     else
       get_children(node)
     end
+  end
+
+  def get_item_by_id(item_id)
+    @by_id[item_id]
   end
 
   def item_id_for_path_title(title)
@@ -2604,8 +2937,13 @@ class PSTree
     @kids = []
     children = parent.get_elements("children")
     children.each do |child|
-       ps = construct_node(child,parent_id)
-      @kids << ps
+      ps = construct_node(child,parent_id)
+      if ps != nil
+        @kids << ps
+      end
+    end
+    if !@kids.empty?
+      @kids = @kids.sort_by { |k| k.name.downcase }
     end
     @kids
   end
@@ -2613,7 +2951,6 @@ class PSTree
   def construct_node(node,parent_id)
     type = get_child_text(node, "type")
     if type == "collection"
-       dbgprint "parsing a collection"
        listed = get_child_text(node, "listed")
        collection = node.get_elements("collection").first
        mode = get_child_text(collection, "mode")
@@ -2624,7 +2961,6 @@ class PSTree
        ps = PSItem.new(id, parent_id, type, name, listed, mode, description)
     end
     if type == "gallery"
-       dbgprint "parsing a gallery"
        listed = get_child_text(node, "listed")
        gallery = node.get_elements("gallery").first
        mode = get_child_text(gallery, "mode")
