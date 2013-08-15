@@ -787,6 +787,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
   ROOT = "/"
 
   def post_init
+
     @items = {}
     @path_cache = {}
     @full_selpath = []
@@ -821,14 +822,8 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
       begin
         selected_path = get_selected_path
         node = @items[col][row]
-        dbgprint("        @last_selected_col = col
-        @last_selected_row = row")
-        dbgprint(col)
-        dbgprint(row)
         @last_selected_col = col
         @last_selected_row = row
-        dbgprint(@last_selected_col)
-        dbgprint(@last_selected_row)
         @pstree.update_selected(node)
         if(node.type == "collection")
           nodes = @pstree.get_cached_children(node)
@@ -901,29 +896,18 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
   end
 
   def update_column(col,is_listed, created_new_collection_id)
-    dbgprint("inside update_column(col,is_listed, created_new_collection_id): col=#{col} is_listed=#{is_listed} created_new_collection_id=#{created_new_collection_id}")
     #col will never be 0 in here!
     selected_path = get_selected_path
     @items[col] = {}
     row = selected_path[col-1]
-dbgprint("@selected_path: #{selected_path.inspect}")
-dbgprint("row: #{row.inspect}")
     node = @items[col-1][row]
-dbgprint("node: #{node.inspect}")
-dbgprint "a"
-
     @pstree.update_selected(node)
-dbgprint "b"
+
     if(node.type == "collection")
-      dbgprint "c"
       nodes = @pstree.get_children(node)
-      dbgprint "d"
-      dbgprint("nodes: #{nodes.inspect}")
-      dbgprint "e"
       setup_column(col,nodes,selected_path)
-      dbgprint "f"
     end
-dbgprint "g"
+
     num_items = query_num_rows_in_column(col, selected_path)
     row = 0
     while row < num_items  do
@@ -935,9 +919,7 @@ dbgprint "g"
     new_item_row = 0
     row = 0
     nodes.each do |node|
-      dbgprint("node:#{node}")
       if node.id == created_new_collection_id
-        dbgprint("matched @ row: #{row}")
         new_item_row = row
       end
       row = row+1
@@ -972,14 +954,10 @@ dbgprint "g"
   end
 
   def get_last_selected_col
-    dbgprint("get_last_selected_col")
-    dbgprint(@last_selected_col)
     @last_selected_col
   end
 
   def get_last_selected_row
-    dbgprint("get_last_selected_row")
-    dbgprint(@last_selected_row)
     @last_selected_row
   end
 
@@ -1034,6 +1012,14 @@ dbgprint "g"
   def reset_cache
     @cache_is_set = false
     @items = {}
+  end
+
+  def set_ui_theme(style)
+    if style == "DarkUI"
+      @gallerycolor = 0xbbbbbb
+      @collectioncolor = 0xffffff
+      @addcolor = 0x33af33
+    end
   end
 
   protected
@@ -1222,6 +1208,8 @@ class PShelterFileUploader
     @ui = PShelterFileUploaderUI.new(@bridge)
     @ui.create_controls(parent_dlg)
 
+    @ui.browser_columnbrowser.set_ui_theme(@bridge.get_ui_theme())
+
     @ui.browser_tree_website.on_click{
       @ui.browser_columnbrowser.set_last_selected_col(-1)
       @ui.browser_columnbrowser.set_last_selected_row(-1)
@@ -1237,7 +1225,6 @@ class PShelterFileUploader
     }
 
     @ui.browser_refresh.on_click{
-      dbgprint "refresh clicked"
       @ui.browser_columnbrowser.reset_cache
       @data_fetch_worker.clear_pstree
       account_parameters_changed
@@ -1251,11 +1238,9 @@ class PShelterFileUploader
          items = @ui.browser_columnbrowser.get_items
          selected_type = "collection"
          if row == -1 || col == -1
-           dbgprint "row == -1 || col == -1"
            parent_id = ""
          else
            parent_node = items[col][row]
-           dbgprint("parent_node = #{parent_node.inspect}")
            if parent_node.type == "gallery"
              selected_type = "gallery"
              if col == 0
@@ -1508,8 +1493,6 @@ class PShelterFileUploader
 
     spec = build_upload_spec(acct, @ui)
 
-    dbgprint("inside run_create_collection_dialog parent_id = #{parent_id}")
-
     dialog_end_callback = lambda {|created_new_collection_id, new_collection_name| handle_new_collection_created(created_new_collection_id, new_collection_name, col, is_listed)}
     cdlg = PShelterCreateCollectionDialog.new(@bridge, spec, @pstree, parent_id, is_collection, is_listed, dialog_end_callback)
     cdlg.instantiate!
@@ -1518,10 +1501,7 @@ class PShelterFileUploader
 
   def handle_new_collection_created (created_new_collection_id, new_collection_name, col, is_listed)
     if created_new_collection_id != false
-      dbgprint("about to update col:")
-      dbgprint(col)
-
-      if col == 0
+        if col == 0
         @ui.browser_columnbrowser.reset_cache
         @data_fetch_worker.clear_pstree
         account_parameters_changed
@@ -2310,8 +2290,8 @@ class Connection
       else
         path = BSAPI+"mem/gallery/insert?format=xml"
       end
-      dbgprint(body.inspect)
-      dbgprint(path.inspect)
+      #dbgprint(body.inspect)
+      #dbgprint(path.inspect)
       resp = @http.post(path, body, headers)
       handle_server_response(resp, resp.body)
       id = @last_response_xml.get_elements("PhotoShelterAPI/data/id").map {|e| e.text }.join
