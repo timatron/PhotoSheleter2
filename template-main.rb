@@ -810,7 +810,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
 
     self.on_will_display_cell_at_row_col do |row, col, full_selpath|
       begin
-       dbgprint "on_will_display_cell_at_row_col  row=#{row} col=#{col} full_selpath=#{full_selpath.inspect}"
+       #dbgprint "on_will_display_cell_at_row_col  row=#{row} col=#{col} full_selpath=#{full_selpath.inspect}"
         will_display_cell_at_row_col(row, col, full_selpath)
       rescue Exception => ex
         dbglog("PShelterColumnBrowser:on_will_display_cell_at_row_col exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
@@ -822,6 +822,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
       begin
         selected_path = get_selected_path
         node = @items[col][row]
+        dbgprint("item clicked: #{node.inspect}")
         @last_selected_col = col
         @last_selected_row = row
         @pstree.update_selected(node)
@@ -829,14 +830,15 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
           nodes = @pstree.get_cached_children(node)
           col+=1
           setup_column(col,nodes,selected_path)
+
+          num_items = query_num_rows_in_column(col, selected_path)
+          row = 0
+          while row < num_items  do
+            will_display_cell_at_row_col(row, col, selected_path)
+             row +=1
+          end
+          reload_column(col)
         end
-        num_items = query_num_rows_in_column(col, selected_path)
-        row = 0
-        while row < num_items  do
-          will_display_cell_at_row_col(row, col, selected_path)
-           row +=1
-        end
-        reload_column(col)
       rescue Exception => ex
  #       dbglog("PShelterColumnBrowser:on_query_num_rows_in_column exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
         raise
@@ -945,7 +947,11 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
   end
 
   def get_pstree_cache
-    @pstree.get_cache
+    if @pstree
+      @pstree.get_cache
+    else
+      nil
+    end
   end
 
   def set_cached_pstree(cache)
@@ -996,7 +1002,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
   end
 
   def will_display_cell_at_row_col(row, col, full_selpath)
-    dbgprint "#{__method__}: col=#{col} row=#{row} full_selpath=#{full_selpath.inspect}"
+    #dbgprint "#{__method__}: col=#{col} row=#{row} full_selpath=#{full_selpath.inspect}"
     node = {}
     if @items.key?(col)
       if @items[col].key?(row)
@@ -1011,6 +1017,8 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
 
   def reset_cache
     @cache_is_set = false
+    @path_cache = {}
+    @full_selpath = []
     @items = {}
   end
 
@@ -1025,7 +1033,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
   protected
 
   def setup_column(col,nodes,full_selpath)
-    dbgprint("inside setup_column(col,nodes,full_selpath): #{col}, #{nodes.inspect}, #{full_selpath.inspect}")
+    #dbgprint("inside setup_column(col,nodes,full_selpath): #{col}, #{nodes.inspect}, #{full_selpath.inspect}")
     already_has_add_collection = false
 
     tmp_path_array = []
@@ -1177,6 +1185,7 @@ class PShelterFileUploader
     @last_status_txt = nil
     @data_fetch_worker = nil
     @account_parameters_dirty = false
+    @refresh_col_browser = false
     @pstree = nil
   end
 
@@ -1294,37 +1303,14 @@ class PShelterFileUploader
     @ui.send_original_radio.on_click {adjust_controls}
     @ui.send_jpeg_radio.on_click {adjust_controls}
 
-    @ui.dest_account_combo.on_sel_change {account_parameters_changed}
-    @ui.dest_org_combo.on_sel_change {account_parameters_changed}
-
-#    @ui.browser_columnbrowser.on_double_click do |row, col|
-#      begin
-#         selected_path = @ui.browser_columnbrowser.get_selected_path
-#         items = @ui.browser_columnbrowser.get_items
-#         node = items[col][row]
-#         if(node.type == "add")
-#           col = selected_path.size-2
-#           if col == -1
-#             row = "ROOT"
-#             parent_id = ""
-#           else
-#             row = selected_path[col]
-#             parent_id = items[col][row].id
-#           end
-#           run_create_collection_dialog(parent_id, col, selected_path)
-#         end
-#         num_items = @ui.browser_columnbrowser.query_num_rows_in_column(col, selected_path)
-#         row = 0
-#         while row < num_items  do
-#           @ui.browser_columnbrowser.will_display_cell_at_row_col(row, col, selected_path)
-#           row +=1
-#         end
-#         @ui.browser_columnbrowser.reload_column(col)
-#       rescue Exception => ex
-#    #       dbglog("PShelterColumnBrowser:on_query_num_rows_in_column exception: #{ex.inspect}\n#{ex.backtrace_to_s}")
-#         raise
-#       end
-#     end
+    @ui.dest_account_combo.on_sel_change {
+      @refresh_col_browser = true
+      account_parameters_changed
+    }
+    @ui.dest_org_combo.on_sel_change {
+      @refresh_col_browser = true
+      account_parameters_changed
+    }
 
     add_jpeg_controls_event_hooks
     add_operations_controls_event_hooks
@@ -1643,6 +1629,8 @@ class PShelterFileUploader
     build_operations_spec(spec, ui)
     build_renaming_spec(spec, ui)
 
+    dbgprint("spec = #{spec.inspect}")
+
     spec
   end
 
@@ -1667,12 +1655,14 @@ class PShelterFileUploader
     elsif ! acct.appears_valid?
       set_status_text("Some account settings appear invalid or missing. Please choose Edit Connections...")
     else
+
       if @account_parameters_dirty
         login = acct.login
         passwd = acct.password
         org = @ui.dest_org_combo.get_selected_item
+        dbgprint("org = #{org.inspect}")
         org = nil if org.empty?
-# "dfw.query: #{login.inspect} #{passwd.inspect} #{org.inspect}"
+        # "dfw.query: #{login.inspect} #{passwd.inspect} #{org.inspect}"
         @data_fetch_worker.query(login, passwd, org)
         @account_parameters_dirty = false
         @awaiting_account_result = true
@@ -1702,8 +1692,20 @@ class PShelterFileUploader
         update_combo(:dest_org_combo, org_list)
         update_combo(:dest_photog_combo, photog_list)
 
-        @ui.browser_columnbrowser.set_tree(@pstree, @ui.browser_tree_website.checked?)
+        if @refresh_col_browser
+          @ui.browser_columnbrowser.reset_cache
+          @ui.browser_columnbrowser.set_tree(@pstree, @ui.browser_tree_website.checked?)
+          @ui.browser_columnbrowser.set_last_selected_col(-1)
+          @ui.browser_columnbrowser.set_last_selected_row(-1)
+          @ui.browser_columnbrowser.reset_tree(@ui.browser_tree_website.checked?)
+          @ui.browser_columnbrowser.public_reload_column(0)
+          @refresh_col_browser = false
+        else
+          @ui.browser_columnbrowser.set_tree(@pstree, @ui.browser_tree_website.checked?)
+        end
+
         adjust_controls
+
       end
     end
   end
@@ -1847,6 +1849,7 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
             orgs = @ps.orgs.collect {|o| o.name}.sort_by{|o| o.downcase}
             orgs.unshift(SUBSCRIBER_ACCT_NAME) if @ps.single_user_access?
             @mutex.synchronize { @orgs_list = orgs }
+            dbgprint("@orgs_list = #{@orgs_list.inspect}")
           end
           @mutex.synchronize { @cur_account = login_account }  # meaning: account_ready
 
@@ -1860,13 +1863,18 @@ dbgprint "PShelterAccountQueryWorker.initialize()"
           unless login_org
             login_org = @orgs_list.first  # just pick the first one if none given
           end
+          dbgprint("login_org = #{login_org}")
           login_org = (login_org.nil? || login_org == SUBSCRIBER_ACCT_NAME) ? nil : login_org
+          dbgprint("login_org = #{login_org}")
 
-          if login_org
+          if !login_org.nil?
+            dbgprint("a")
             set_status_msg("Attempting organization login...")
             @ps.org_login(login_org)
           else
+            dbgprint("b")
             set_status_msg("Entering subscriber account mode...")
+            dbgprint("@ps.active_org = #{@ps.active_org.inspect}")
             @ps.org_logout unless @ps.active_org.nil?
           end
 
@@ -2048,12 +2056,12 @@ end
 
 class PSOrg
   attr_reader :oid, :name
-  def initialize(doc)
-dbgprint "PhotoShelter::PSOrg.initialize()"
+  def initialize(member,id,name)
+    dbgprint "PhotoShelter::PSOrg.initialize()"
     # @doc = doc
-    @oid = doc.get_elements("O_ID").map{|e| e.text}.join.strip
-    @name = doc.get_elements("O_NAME").map{|e| e.text}.join.strip
-    @full_member = doc.get_elements("OU_F_MEM").map{|e| e.text}.join.strip
+    @oid = id
+    @name = name
+    @full_member = member
   end
 
   def full_member?
@@ -2066,9 +2074,9 @@ class PSPho
   def initialize(doc)
 dbgprint "PhotoShelter::PSPho.initialize()"
     # @doc = doc
-    @uid = doc.get_elements("U_ID").map{|e| e.text}.join.strip
-    @first_name = doc.get_elements("U_FIRST_NAME").map{|e| e.text}.join.strip
-    @last_name = doc.get_elements("U_LAST_NAME").map{|e| e.text}.join.strip
+    @uid = doc.get_elements("user_id").map{|e| e.text}.join.strip
+    @first_name = doc.get_elements("first_name").map{|e| e.text}.join.strip
+    @last_name = doc.get_elements("last_name").map{|e| e.text}.join.strip
   end
 
   def full_name
@@ -2099,6 +2107,7 @@ class Connection
     @session_status = ""
     @session_first_name = ""
     @session_last_name = ""
+    @session_token = nil
     @active_oid = nil
     @connection_uri = get_connection_uri(override_uri)
     @sitename = @connection_uri.host
@@ -2120,11 +2129,13 @@ class Connection
   # at some point.  It doesn't know whether our session may have
   # expired.
   def logged_in?
-    ! @auth_client_cookie.nil?
+    #! @auth_client_cookie.nil?
+    ! @session_token.nil?
   end
 
   def set_logged_out
-    @auth_client_cookie = nil
+    #@auth_client_cookie = nil
+    @session_token = nil
   end
 
   def session_full_name
@@ -2135,14 +2146,18 @@ class Connection
   end
 
   def active_org
-    @orgs.find {|o| o.oid == @active_oid}
+    dbgprint("orgs = #{@orgs.inspect}")
+    org = @orgs.find {|o| o.oid == @active_oid}
+    dbgprint("org = #{org.inspect}")
+    org
   end
 
   def single_user_access?
     # TODO come up with a better way to figure this out
     # this is a quick fix to make it work
     # @session_status == "subscriber"
-    ! @auth_client_cookie.nil?
+    #! @auth_client_cookie.nil?
+    ! @session_token.nil?
   end
 
   def multi_user_access?
@@ -2208,17 +2223,17 @@ class Connection
       parts = []
       parts << key_value_to_multipart("email", @user_email)
       parts << key_value_to_multipart("password", @passwd)
+      parts << key_value_to_multipart("mode", "token")
       boundary = Digest::MD5.hexdigest(@user_email).to_s  # just hash the email itself
       headers = get_default_headers("Content-type" => "multipart/form-data, boundary=#{boundary}")
       body = combine_parts(parts, boundary)
       resp = http.post(path, body, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
       @auth_xml = @last_response_xml
     rescue Exception => ex
       set_logged_out
       raise
     end
-    @orgs = parse_organizations(@auth_xml)
     true
   end
 
@@ -2249,29 +2264,38 @@ class Connection
       org = @orgs.find {|o| o.name == org_name}
       raise(PhotoShelterError, "No organization found named '#{org_name}'") unless org
       http = @http
-      path = BSAPI+"org-auth?O_ID=#{CGI.escape(org.oid)}"
+      path = BSAPI+"mem/organization/#{CGI.escape(org.oid)}/authenticate?format=xml"
+      dbgprint(path)
       headers = get_default_headers
       resp = http.get(path, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
+      dbgprint(resp.body)
+      dbgprint("active org = #{org.inspect}")
+      dbgprint("@active_oid = #{org.oid}")
+      @active_oid = org.oid
       true
     }
   end
 
   # Log out of organization, back to single-user mode.
   def org_logout
+    dbgprint("calling org_logout")
     perform_with_session_expire_retry {
       auth_login unless logged_in?
       http = @http
-      path = BSAPI+"org-auth"
+      path = BSAPI+"mem/organization/logout?format=xml"
       headers = get_default_headers
       resp = http.get(path, headers)
-      handle_server_response(resp, resp.body)
+      dbgprint("trying to logout of org")
+  #    dbgprint(resp.body.inspect)
+      handle_server_response(path, resp, resp.body)
+      @active_oid = nil
       true
     }
   end
 
   def create_collection_gallery(parent_id, type, name, f_list, inherit, visibility)
-    dbgprint "create_collection_gallery: #{parent_id}, #{type}, #{name}, #{f_list}, #{inherit}, #{visibility}"
+    #dbgprint "create_collection_gallery: #{parent_id}, #{type}, #{name}, #{f_list}, #{inherit}, #{visibility}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
       boundary = Digest::MD5.hexdigest(name).to_s  # just hash the collection_name itself
@@ -2293,7 +2317,7 @@ class Connection
       #dbgprint(body.inspect)
       #dbgprint(path.inspect)
       resp = @http.post(path, body, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
       id = @last_response_xml.get_elements("PhotoShelterAPI/data/id").map {|e| e.text }.join
       if(inherit == "t")
         update_collection_gallery_inherit(id, type, parent_id, inherit)
@@ -2305,7 +2329,7 @@ class Connection
   end
 
   def update_collection_gallery_inherit (id, type, parent_id, inherit)
-    dbgprint "update_collection_gallery_inherit: #{id}, #{inherit}"
+    #dbgprint "update_collection_gallery_inherit: #{id}, #{inherit}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
       boundary = Digest::MD5.hexdigest(id).to_s  # just hash the collection_name itself
@@ -2320,13 +2344,13 @@ class Connection
         path = BSAPI+"mem/gallery/" + id + "/permission/inherit?format=xml"
       end
       resp = @http.post(path, body, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
       true
     }
   end
 
   def update_collection_gallery_visibility (id, type, visibility)
-    dbgprint "update_collection_gallery_visibility: #{id}, #{visibility}"
+    #dbgprint "update_collection_gallery_visibility: #{id}, #{visibility}"
     perform_with_session_expire_retry {
       auth_login unless logged_in?
       boundary = Digest::MD5.hexdigest(id).to_s  # just hash the collection_name itself
@@ -2340,7 +2364,7 @@ class Connection
         path = BSAPI+"mem/gallery/" + id + "/visibility/update?format=xml"
       end
       resp = @http.post(path, body, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
       true
     }
   end
@@ -2373,7 +2397,7 @@ class Connection
       headers = get_default_headers
       http = @http
       resp = http.get(path, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
 #@last_response_xml.write($stderr, 0)
       PSTree.new(@last_response_xml, self)
     }
@@ -2387,7 +2411,7 @@ class Connection
       headers = get_default_headers
       http = @http
       resp = http.get(path, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
 #@last_response_xml.write($stderr, 0)
       @last_response_xml
     }
@@ -2417,21 +2441,27 @@ class Connection
   # https://www.photoshelter.com/bsapi/1.0/org-usr-pho-qry
   #
   def get_photog_list
+    dbgprint("inside get_photog_list")
+    dbgprint(active_org.inspect)
+    photogs = []
     perform_with_session_expire_retry {
       auth_login unless logged_in?
-      path = BSAPI+"org-usr-pho-qry"
+      path = BSAPI+"mem/organization/#{CGI.escape(@active_oid)}/photographers?format=xml"
       headers = get_default_headers
       http = @http
       resp = http.get(path, headers)
-      handle_server_response(resp, resp.body)
+      dbgprint(resp.body)
+      handle_server_response(path, resp, resp.body)
 # @last_response_xml.write($stderr, 0)
       photogs = parse_photog_list(@last_response_xml)
       update_photog_name_id_mapping(photogs)
       photogs
     }
+      photogs
   end
 
   def can_get_photog_list?
+    dbgprint("inside can_get_photog_list active_org = #{active_org.inspect}")
     ! active_org.nil?
   end
 
@@ -2449,7 +2479,7 @@ class Connection
       parts << key_value_to_multipart("file_name", filename)
       body = combine_parts(parts, boundary)
       resp = @http.post(path, body, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
       #@last_response_xml.write($stderr, 0)
      # dbgprint @last_response_xml.inspect
       exists = false
@@ -2458,7 +2488,7 @@ class Connection
       if total.to_i > 0
         exists = true
       end
-      dbgprint "image_exist('#{gallery_id}','#{filename}') = #{exists}"
+      #dbgprint "image_exist('#{gallery_id}','#{filename}') = #{exists}"
       exists
     }
   end
@@ -2568,12 +2598,12 @@ class Connection
 #      else
 #        parts << key_value_to_multipart("A_ID", gallery_id)
 #      end
-#      if photog_name
-#        photog_id = photog_name_to_id(photog_name)
-#        if photog_id
-#          parts << key_value_to_multipart("I_PHO_ID", photog_id)
-#        end
-#      end
+      if photog_name
+        photog_id = photog_name_to_id(photog_name)
+        if photog_id
+          parts << key_value_to_multipart("photographer_id", photog_id)
+        end
+      end
 #      if rotation != 0
 #        parts << key_value_to_multipart("I_ANGLE", rotation)
 #      end
@@ -2588,7 +2618,7 @@ class Connection
       path = BSAPI+"mem/image/upload"
       http = @http
       resp = http.post(path, body, headers)
-      handle_server_response(resp, resp.body)
+      handle_server_response(path, resp, resp.body)
       File.join(gallery_id, remote_filename)
     }
   end
@@ -2634,6 +2664,9 @@ class Connection
     #    headers['Authorization'] = 'Basic ' + encode64("#{user}:#{pass}").chop
     #  end
     headers['X-PS-Api-Key'] = APIKEY
+    if !@session_token.nil?
+      headers['X-PS-Auth-Token'] = @session_token
+    end
     headers.merge(additional_headers)
   end
 
@@ -2658,15 +2691,24 @@ class Connection
       " body=#{resp.body.to_s[0...64].inspect}..."
   end
 
-  def handle_server_response(resp, data)
+  def handle_server_response(path, resp, data)
   #  dbgprint(data)
-  #  dbgprint(resp['content-type'])
+    dbgprint("path = #{path.inspect}")
     raise(BadHTTPResponse, resp.inspect) unless resp.code == "200"
     raise(BadAuthResponse, get_errmsg_for_resp(resp)) unless resp['content-type'] == "text/xml"
-    accept_server_cookie(resp['set-cookie'])
+    # Turning this off while we switch to token
+    #  accept_server_cookie(resp['set-cookie'])
     @last_response_xml = @bridge.xml_document_parse(data)
     raise_on_failure(@last_response_xml)
     @session_status = @last_response_xml.get_elements("PhotoShelterAPI/status").map {|e| e.text }.join
+    if path == BSAPI+"mem/authenticate"
+      @orgs = parse_organizations(@last_response_xml)
+      session_token = @last_response_xml.get_elements("PhotoShelterAPI/data/token").collect {|e| e.text}.join(" ")
+      if session_token != ""
+        @session_token = session_token
+      end
+      dbgprint("session token = #{@session_token}")
+    end
     # @session_first_name = @last_response_xml.get_elements("BitShelterAPI/session/U_FIRST_NAME").map {|e| e.text }.join
     # @session_last_name = @last_response_xml.get_elements("BitShelterAPI/session/U_LAST_NAME").map {|e| e.text }.join
     # oid = @last_response_xml.get_elements("BitShelterAPI/session/O_ID").map {|e| e.text }.join
@@ -2687,14 +2729,32 @@ class Connection
   end
 
   def parse_organizations(doc)
+    dbgprint(doc.inspect)
     orgs = []
-    doc.get_elements("BitShelterAPI/return/org").each {|e| orgs << PSOrg.new(e)}
+    #{"member":"t","id":"O0000AoXP1xI.fPs","name":"PS Test Agency"}
+    node = doc.get_elements("PhotoShelterAPI/data/org").each {|e|
+      child_node = e.get_elements("id").first
+      id = child_node ? child_node.text : ""
+      id = "" unless id
+
+      child_node = e.get_elements("member").first
+      member = child_node ? child_node.text : ""
+      member = "" unless member
+
+      child_node = e.get_elements("name").first
+      name = child_node ? child_node.text : ""
+      name = "" unless name
+
+      orgs << PSOrg.new(member,id,name)
+    }
+    dbgprint("in parse_organizations orgs = #{orgs.inspect}")
     orgs
   end
 
   def parse_photog_list(doc)
     photogs = []
-    doc.get_elements("BitShelterAPI/return/pho").each {|e| photogs << PSPho.new(e)}
+    dbgprint("photoglist = #{doc.inspect}")
+    doc.get_elements("PhotoShelterAPI/data/photographers").each {|e| photogs << PSPho.new(e)}
     photogs
   end
 
@@ -2787,7 +2847,7 @@ class PSTree
 
       @top_level_nodes = get_node_children(root, "root")
       @top_level_nodes.each { |item|
-        dbgprint "PSItem (#{item.id}, #{item.parent_id}, #{item.type}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
+        #dbgprint "PSItem (#{item.id}, #{item.parent_id}, #{item.type}, #{item.name}, #{item.listed}, #{item.mode}, #{item.description})"
         @by_id[item.id] = item
         @children["root"] << item.id
         if item.type == "collection"
