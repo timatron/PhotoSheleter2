@@ -536,7 +536,7 @@ class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
 
     name = @new_collection_edit.get_text.strip
     if name.empty?
-      Dlg::MessageBox.ok("Please enter a non-blank name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+      Dlg::MessageBox.ok("Please enter a name for your gallery/collection.", Dlg::MessageBox::MB_ICONEXCLAMATION)
       return
     end
 
@@ -862,8 +862,9 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
       end
 
       select_row_in_column(get_last_selected_row, get_last_selected_col)
-      @pstree.update_selected(@items[get_last_selected_col][get_last_selected_row])
-
+      if @items[get_last_selected_col] != nil
+        @pstree.update_selected(@items[get_last_selected_col][get_last_selected_row])
+      end
     else
       if listed_on_website
         nodes = @pstree.top_level_nodes(true)
@@ -1037,20 +1038,6 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
       end
     end
 
-#    if already_has_add_collection == false
-#
-#      tmp_tmp_path_array = []
-#      parent_id = ""
-#      if col > 0
-#        parent_id = @items[col-1][full_selpath[col-1]].id
-#      end
-##      spacer = @pstree.get_spacer_node(col,parent_id)
-#      add_collection = @pstree.get_add_a_collection_node(col,parent_id)
-#      nodes.unshift(add_collection)
-#      tmp_path_array.unshift(add_collection.name)
-#
-#    end
-
     if col == 0
       @path_cache[ROOT] = tmp_path_array
     else
@@ -1111,7 +1098,7 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
     else
       if node.type == "collection"
         {
-          "text" => node.name,
+          "text" => node.htmlname,
           "is_leaf" => false,
           "is_bold" => true,
           "text_color" => @collectioncolor
@@ -1119,14 +1106,14 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
       else
         if node.type == "gallery"
           {
-            "text" => node.name,
+            "text" => node.htmlname,
             "is_leaf" => true,
             "is_bold" => false,
             "text_color" => @gallerycolor
           }
         else
           {
-            "text" => node.name,
+            "text" => node.htmlname,
             "is_leaf" => true,
             "is_bold" => false,
             "text_color" => @addcolor
@@ -1656,9 +1643,9 @@ class PShelterFileUploader
       end
 
       set_status_text( @data_fetch_worker.get_status_msg )
-#      if @data_fetch_worker.get_status_msg != "Ready."
-#        dbgprint "dfw.status: #{@data_fetch_worker.get_status_msg.inspect}"
-#      end
+      if @data_fetch_worker.get_status_msg != "Ready."
+        dbgprint "dfw.status: #{@data_fetch_worker.get_status_msg.inspect}"
+      end
 
       if @awaiting_account_result  &&  (@data_fetch_worker.result_ready? || @data_fetch_worker.error_state?)
         @awaiting_account_result = false
@@ -1941,6 +1928,8 @@ class PShelterAccountQueryWorker
     if @ps.can_collection_query?
       set_status_msg("Querying available collection folders...")
       pstree = @ps.collection_query
+    else
+      pstree = @ps.empty_collection
     end
     if @ps.can_get_photog_list?
       photog_list = @ps.get_photog_list.map{|o| o.full_name}.sort_by{|o| o.downcase}
@@ -2083,7 +2072,7 @@ end
 class Connection
 
   BSAPI = "/psapi/v2/"
-  APIKEY = "TimSchwartz"
+  APIKEY = "S67j0pDkpgk"
 
   attr_reader :user_email, :auth_xml, :last_response_xml, :orgs,
               :session_status, :session_first_name, :session_last_name
@@ -2402,8 +2391,10 @@ class Connection
     }
   end
 
-  def nil_collection
-    PSTree.new(nil)
+  def empty_collection
+    xml = '<?xml version="1.0"?>' + "\n"
+    xml += '<PhotoShelterAPI version="1.0"><status>ok</status><data></data></PhotoShelterAPI>'
+    PSTree.new(@bridge.xml_document_parse(xml), self)
   end
 
   # Are we allowed to collection_query in our current context?
@@ -2801,7 +2792,7 @@ class ConnectionCache
   end
 end
 
-PSItem = Struct.new(:id, :parent_id, :type, :name, :listed, :mode, :description)
+PSItem = Struct.new(:id, :parent_id, :type, :name, :htmlname, :listed, :mode, :description)
 
 class PSTree
   include Enumerable
@@ -2843,7 +2834,7 @@ class PSTree
       @top_level_non_website_nodes = non_website_tmp_array.sort_by { |k| k.name.downcase }
     end
 
-    @selected = PSItem.new("", "", "", "", "", "", "")
+    @selected = PSItem.new("", "", "", "", "", "", "", "")
   end
 
   def get_children(node)
@@ -2928,14 +2919,6 @@ class PSTree
     paths_array
   end
 
-  def get_spacer_node(col,parent_id)
-    PSItem.new("spacer" + col.to_s, parent_id, "spacer", "", "", "", "")
-  end
-
-  def get_add_a_collection_node(col,parent_id)
-    PSItem.new("add" + col.to_s, parent_id, "add", "+ Add Gallery/Collection", "", "", "")
-  end
-
   def update_selected(node)
     @selected = node
   end
@@ -2970,9 +2953,10 @@ class PSTree
        mode = get_child_text(collection, "mode")
        id = get_child_text(collection, "id")
        name = get_child_text(collection, "name")
+       htmlname = CGI.unescapeHTML(name)
        description = get_child_text(collection, "description")
        type = "collection"
-       ps = PSItem.new(id, parent_id, type, name, listed, mode, description)
+       ps = PSItem.new(id, parent_id, type, name, htmlname, listed, mode, description)
     end
     if type == "gallery"
        listed = get_child_text(node, "listed")
@@ -2980,9 +2964,10 @@ class PSTree
        mode = get_child_text(gallery, "mode")
        id = get_child_text(gallery, "id")
        name = get_child_text(gallery, "name")
+       htmlname = CGI.unescapeHTML(name)
        description = get_child_text(gallery, "description")
        type = "gallery"
-       ps = PSItem.new(id, parent_id, type, name, listed, mode, description)
+       ps = PSItem.new(id, parent_id, type, name, htmlname, listed, mode, description)
     end
     ps
   end
@@ -2991,7 +2976,6 @@ class PSTree
     child_node = node.get_elements(child_name).first
     txt = child_node ? child_node.text : ""
     txt = "" unless txt
-  #  txt = htmlentities = CGI.unescapeHTML(txt)
     txt
   end
 
