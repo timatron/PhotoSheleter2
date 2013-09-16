@@ -573,7 +573,7 @@ class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
         type = "collection"
       end
 
-      if @is_listed && @parent_id == "" && !@is_collection
+      if @is_listed && @parent_id == ""
         f_list = "t"
       else
         f_list = "f"
