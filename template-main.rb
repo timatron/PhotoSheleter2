@@ -1217,7 +1217,7 @@ class PShelterFileUploader
     }
 
     @ui.browser_create_collection_button.on_click{
-      begin
+       begin
          selected_path = @ui.browser_columnbrowser.get_selected_path
          row = @ui.browser_columnbrowser.get_last_selected_row
          col = @ui.browser_columnbrowser.get_last_selected_col
@@ -1232,9 +1232,8 @@ class PShelterFileUploader
              if col == 0
                parent_id = ""
              else
-               parent_node = @pstree.get_item_by_id(parent_node.parent_id)
+               parent_id = parent_node.parent_id
                col = col-1
-               parent_id = parent_node.id
              end
            else
              parent_id = parent_node.id
@@ -1262,9 +1261,8 @@ class PShelterFileUploader
             if col == 0
               parent_id = ""
             else
-              parent_node = @pstree.get_item_by_id(parent_node.parent_id)
+              parent_id = parent_node.parent_id
               col = col-1
-              parent_id = parent_node.id
             end
           else
             parent_id = parent_node.id
@@ -1431,6 +1429,7 @@ class PShelterFileUploader
   protected
 
   def  run_create_collection_dialog(parent_id, col, selected_path, is_collection, selected_type)
+    dbgprint("rar")
     return unless @pstree
     if selected_type == "collection"
       col = col + 1
