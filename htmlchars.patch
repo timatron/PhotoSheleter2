@@ -1,0 +1,41 @@
+--- template-main.rb.org	2013-09-16 12:22:40.000000000 -0400
++++ template-main.rb	2013-09-16 12:21:57.000000000 -0400
+@@ -2953,7 +2953,7 @@
+       mode = get_child_text(collection, "mode")
+       id = get_child_text(collection, "id")
+       name = get_child_text(collection, "name")
+-       htmlname = CGI.unescapeHTML(name)
++       htmlname = basic_unescape_html(name)
+       description = get_child_text(collection, "description")
+       type = "collection"
+       ps = PSItem.new(id, parent_id, type, name, htmlname, listed, mode, description)
+@@ -2964,7 +2964,7 @@
+       mode = get_child_text(gallery, "mode")
+       id = get_child_text(gallery, "id")
+       name = get_child_text(gallery, "name")
+-       htmlname = CGI.unescapeHTML(name)
++       htmlname = basic_unescape_html(name)
+       description = get_child_text(gallery, "description")
+       type = "gallery"
+       ps = PSItem.new(id, parent_id, type, name, htmlname, listed, mode, description)
+@@ -2972,6 +2972,20 @@
+    ps
+  end
+
++  def basic_unescape_html(str)
++    str.gsub(/&(amp|quot|gt|lt);/) do
++      match = $1.dup
++      case match
++      when 'amp'                 then '&'
++      when 'quot'                then '"'
++      when 'gt'                  then '>'
++      when 'lt'                  then '<'
++      else
++        "&#{match};"
++      end
++    end
++  end
++
+  def get_child_text(node, child_name)
+    child_node = node.get_elements(child_name).first
+    txt = child_node ? child_node.text : ""

@@ -536,7 +536,7 @@ class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
 
     name = @new_collection_edit.get_text.strip
     if name.empty?
-      Dlg::MessageBox.ok("Please enter a name for your gallery/collection.", Dlg::MessageBox::MB_ICONEXCLAMATION)
+      Dlg::MessageBox.ok("Please enter a name.", Dlg::MessageBox::MB_ICONEXCLAMATION)
       return
     end
 
@@ -573,7 +573,7 @@ class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
         type = "collection"
       end
 
-      if @is_listed
+      if @is_listed && @parent_id == "" && !@is_collection
         f_list = "t"
       else
         f_list = "f"
@@ -896,7 +896,6 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
     @items[col] = {}
     row = selected_path[col-1]
     node = @items[col-1][row]
-    @pstree.update_selected(node)
 
     if(node.type == "collection")
       nodes = @pstree.get_children(node)
@@ -923,6 +922,8 @@ class PShelterColumnBrowser < Dlg::ColumnBrowser
     set_last_selected_col(col)
     set_last_selected_row(new_item_row)
     select_row_in_column(new_item_row, col)
+    @pstree.update_selected(@items[col][new_item_row])
+
   end
 
   def get_items
@@ -1687,7 +1688,11 @@ class PShelterFileUploader
             @ui.browser_columnbrowser.select_row_in_column(new_item_row, 0)
             @ui.browser_columnbrowser.set_last_selected_col(0)
             @ui.browser_columnbrowser.set_last_selected_row(new_item_row)
+            items = @ui.browser_columnbrowser.get_items
+            @pstree.update_selected(items[0][new_item_row])
             @col_zero_node_id_to_select = nil
+
+
           end
           @refresh_col_browser = false
         else
@@ -2128,9 +2133,7 @@ class Connection
   end
 
   def active_org
-    dbgprint("orgs = #{@orgs.inspect}")
     org = @orgs.find {|o| o.oid == @active_oid}
-    dbgprint("org = #{org.inspect}")
     org
   end
 
@@ -2953,7 +2956,7 @@ class PSTree
        mode = get_child_text(collection, "mode")
        id = get_child_text(collection, "id")
        name = get_child_text(collection, "name")
-       htmlname = CGI.unescapeHTML(name)
+       htmlname = basic_unescape_html(name)
        description = get_child_text(collection, "description")
        type = "collection"
        ps = PSItem.new(id, parent_id, type, name, htmlname, listed, mode, description)
@@ -2971,6 +2974,21 @@ class PSTree
     end
     ps
   end
+
+  def basic_unescape_html(str)
+    str.gsub(/&(amp|quot|gt|lt);/) do
+      match = $1.dup
+      case match
+      when 'amp'                 then '&'
+      when 'quot'                then '"'
+      when 'gt'                  then '>'
+      when 'lt'                  then '<'
+      else
+        "&#{match};"
+      end
+    end
+  end
+
 
   def get_child_text(node, child_name)
     child_node = node.get_elements(child_name).first
