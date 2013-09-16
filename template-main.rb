@@ -573,7 +573,7 @@ class PShelterCreateCollectionDialog < Dlg::DynModalChildDialog
         type = "collection"
       end
 
-      if @is_listed && @parent_id == "" && !@is_collection
+      if @is_listed && @parent_id == ""
         f_list = "t"
       else
         f_list = "f"
@@ -2966,7 +2966,7 @@ class PSTree
        mode = get_child_text(gallery, "mode")
        id = get_child_text(gallery, "id")
        name = get_child_text(gallery, "name")
-       htmlname = CGI.unescapeHTML(name)
+       htmlname = basic_unescape_html(name)
        description = get_child_text(gallery, "description")
        type = "gallery"
        ps = PSItem.new(id, parent_id, type, name, htmlname, listed, mode, description)
