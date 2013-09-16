@@ -2966,7 +2966,7 @@ class PSTree
        mode = get_child_text(gallery, "mode")
        id = get_child_text(gallery, "id")
        name = get_child_text(gallery, "name")
-       htmlname = CGI.unescapeHTML(name)
+       htmlname = basic_unescape_html(name)
        description = get_child_text(gallery, "description")
        type = "gallery"
        ps = PSItem.new(id, parent_id, type, name, htmlname, listed, mode, description)
